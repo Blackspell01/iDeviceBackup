@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <style>
+        button {
+            background-color: #3498db;
+            color: #ffffff;
+            border: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 400;
+            padding: 0.25rem 0.75rem;
+            border-radius: 0.5rem;
+            min-height: 38.4px;
+            cursor: pointer;
+            font-family: sans-serif;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #2980b9;
+        }
+    </style>
+</head>
+<body>
+    <button id="paste_button">Inhalt einfügen</button>
+
+    <script>
+        function sendMessageToStreamlitClient(type, data) {
+            const outData = Object.assign({ isStreamlitMessage: true, type: type }, data);
+            window.parent.postMessage(outData, "*");
+        }
+
+        const Streamlit = {
+            setComponentReady: function() { sendMessageToStreamlitClient("streamlit:componentReady", {apiVersion: 1}); },
+            setFrameHeight: function(height) { sendMessageToStreamlitClient("streamlit:setFrameHeight", {height: height}); },
+            setComponentValue: function(value) { sendMessageToStreamlitClient("streamlit:setComponentValue", {value: value}); },
+            RENDER_EVENT: "streamlit:render",
+            events: {
+                addEventListener: function(type, callback) {
+                    window.addEventListener("message", function(event) {
+                        if (event.data.type === type) { event.detail = event.data; callback(event); }
+                    });
+                }
+            }
+        };
+
+        async function parseClipboardData() {
+            try {
+                // Nur Text lesen - das was für deine .plist Dateien nötig ist
+                const text = await navigator.clipboard.readText();
+                Streamlit.setComponentValue(text);
+            } catch (error) {
+                Streamlit.setComponentValue("error: " + error);
+            }
+        }
+
+        Streamlit.events.addEventListener(Streamlit.RENDER_EVENT, (event) => {
+            if (!window.rendered) {
+                const {label} = event.detail.args;
+                const btn = document.getElementById('paste_button');
+                if (label) btn.innerHTML = label;
+                btn.addEventListener('click', parseClipboardData);
+                window.rendered = true;
+            }
+        });
+
+        Streamlit.setComponentReady();
+        Streamlit.setFrameHeight(45);
+    </script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+services:
+  ios-backup:
+    build:
+      context: .
+    image: ios-backup:1.1
+    container_name: iOSBackup
+    restart: always
+    privileged: true
+    network_mode: host
+    volumes:
+      - /mnt/HDD/iOS/:/iPhone
+      - ./keys:/var/lib/lockdown
+      - ./app:/app
+    environment:
+      - PORT=8502
+networks: {}
