@@ -352,6 +352,7 @@
 
         <div class="logs-section">
             <h2 id="progress-title">📋 Fortschritt</h2>
+            <div id="device-info-display" class="hidden" style="margin-bottom: 15px; color: #666; font-size: 0.9em;"></div>
             
             <div class="progress-bar">
                 <div id="progress-fill" class="progress-fill" style="width: 0%;"></div>
@@ -375,6 +376,7 @@
 
         // DOM-Elemente
         const progressTitle = document.getElementById('progress-title');
+        const deviceInfoDisplay = document.getElementById('device-info-display');
         const deviceSelector = document.getElementById('device-selector');
         const deviceSelect = document.getElementById('device-select');
         const deviceInfo = document.getElementById('device-info');
@@ -413,6 +415,14 @@
                 btnStart.disabled = true;
                 btnStop.disabled = false;
                 
+                // Show device info if available
+                if (status.device_info) {
+                    deviceInfoDisplay.textContent = `${status.device_info.model || ''} • iOS ${status.device_info.version || ''}`;
+                    deviceInfoDisplay.classList.remove('hidden');
+                } else {
+                    deviceInfoDisplay.classList.add('hidden');
+                }
+                
                 // Update progress from status
                 if (status.progress !== undefined) {
                     currentProgress = status.progress;
@@ -424,6 +434,7 @@
                 startEventStream();
             } else {
                 progressTitle.textContent = '⚪ Bereit';
+                deviceInfoDisplay.classList.add('hidden');
                 deviceSelect.disabled = false;
                 btnStop.disabled = true;
                 updateButtons();

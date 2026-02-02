@@ -27,7 +27,7 @@ DEVICES = {
     "Petra": {"ip": "192.168.188.69", "pair_record": "00008110-000868AE2212801E"},
 }
 
-STATE = {"running": False, "device": None, "progress": 0}
+STATE = {"running": False, "device": None, "progress": 0, "device_info": None}
 STATE_LOCK = threading.Lock()
 STOP = threading.Event()
 
@@ -41,15 +41,22 @@ def clear_logs():
 
 def get_status():
     with STATE_LOCK:
-        return {"running": STATE["running"], "device": STATE["device"], "progress": STATE["progress"]}
+        return {
+            "running": STATE["running"],
+            "device": STATE["device"],
+            "progress": STATE["progress"],
+            "device_info": STATE["device_info"]
+        }
 
 
-def set_status(running, device=None, progress=None):
+def set_status(running, device=None, progress=None, device_info=None):
     with STATE_LOCK:
         STATE["running"] = running
         STATE["device"] = device
         if progress is not None:
             STATE["progress"] = progress
+        if device_info is not None:
+            STATE["device_info"] = device_info
 
 
 def log_line(text):
@@ -170,6 +177,27 @@ def run_backup(device_name):
 
         threading.Thread(target=stream_output, args=(usbmuxd, "usbmuxd: "), daemon=True).start()
         time.sleep(5)
+
+        # Get device info
+        try:
+            result = subprocess.run(
+                ["ideviceinfo", "-n"],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            if result.returncode == 0:
+                lines = result.stdout.strip().split("\n")
+                info = {}
+                for line in lines:
+                    if "ProductType:" in line:
+                        info["model"] = line.split(":", 1)[1].strip()
+                    elif "ProductVersion:" in line and "HumanReadable" not in line:
+                        info["version"] = line.split(":", 1)[1].strip()
+                if info:
+                    set_status(True, device_name, 0, info)
+        except Exception as e:
+            log_line(f"Device info konnte nicht abgerufen werden: {e}")
 
         backup = subprocess.Popen(
             ["stdbuf", "-oL", "idevicebackup2", "backup", "-n", "/iPhone"],
