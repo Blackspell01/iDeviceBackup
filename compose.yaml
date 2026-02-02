@@ -2,7 +2,7 @@ services:
   ios-backup:
     build:
       context: .
-    image: ios-backup:1.1
+    image: ios-backup:1.0
     container_name: iOSBackup
     restart: always
     privileged: true
@@ -12,5 +12,6 @@ services:
       - ./keys:/var/lib/lockdown
       - ./app:/app
     environment:
-      - PORT=8502
+      - PORT=89
+      - BASE_URL=/api/ingress/backup
 networks: {}

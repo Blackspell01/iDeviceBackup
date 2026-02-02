@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📱 iPhone Backup Manager</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .container {
+            max-width: 1400px;
+            width: 100%;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            padding: 30px 15px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        }
+
+        h1 {
+            font-size: 2em;
+            color: #333;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        @media (max-width: 600px) {
+            .header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            h1 {
+                font-size: 2em;
+            }
+        }
+
+        .status {
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 500;
+            font-size: 0.9em;
+        }
+
+        .status.ready {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .status.running {
+            background: #fff3e0;
+            color: #e65100;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        .device-selector {
+            margin: 15px 0;
+        }
+
+        .device-selector label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #555;
+        }
+
+        select {
+            width: 100%;
+            padding: 12px;
+            font-size: 16px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            background: white;
+            cursor: pointer;
+            transition: border-color 0.3s;
+        }
+
+        select:hover {
+            border-color: #667eea;
+        }
+
+        select:disabled {
+            background: #f5f5f5;
+            cursor: not-allowed;
+        }
+
+        .device-info {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+
+        .device-info p {
+            margin: 8px 0;
+            color: #555;
+        }
+
+        .device-info strong {
+            color: #333;
+        }
+
+        .device-info-row {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+            flex-wrap: wrap;
+        }
+
+        .device-info-block {
+            flex: 1 1 220px;
+            min-width: 200px;
+        }
+
+        .pair-record-section {
+            margin-top: 0;
+        }
+
+        .pair-record-details {
+            border-top: 1px solid #ddd;
+            padding-top: 10px;
+        }
+
+        .pair-record-details summary {
+            font-size: 1em;
+            font-weight: 600;
+            color: #666;
+            cursor: pointer;
+            list-style: none;
+        }
+
+        .pair-record-details summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .pair-record-details summary::before {
+            content: '▸';
+            display: inline-block;
+            margin-right: 8px;
+            transition: transform 0.2s ease;
+        }
+
+        .pair-record-details[open] summary::before {
+            transform: rotate(90deg);
+        }
+
+        .buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 25px;
+            margin: 20px 0;
+        }
+
+        button {
+            padding: 15px 20px;
+            font-size: 20px;
+            font-weight: 600;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-start {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-start:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .btn-stop {
+            background: #f44336;
+            color: white;
+        }
+
+        .btn-stop:hover:not(:disabled) {
+            background: #d32f2f;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(244, 67, 54, 0.3);
+        }
+
+        .btn-clipboard {
+            background: #4caf50;
+            color: white;
+            grid-column: 1 / -1;
+        }
+
+        .btn-clipboard:hover:not(:disabled) {
+            background: #45a049;
+        }
+
+        .logs-section {
+            margin-top: 50px;
+        }
+
+        .logs-section h2 {
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: #e0e0e0;
+            border-radius: 15px;
+            overflow: hidden;
+            margin-bottom: 20px;
+            position: relative;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.5s ease;
+        }
+
+        .progress-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #333;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .logs-container {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 10px;
+            border-radius: 10px;
+            height: 350px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 10px;
+            font-weight: bold;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        .logs-container::-webkit-scrollbar {
+            width: 10px;
+        }
+
+        .logs-container::-webkit-scrollbar-track {
+            background: #2d2d2d;
+            border-radius: 10px;
+        }
+
+        .logs-container::-webkit-scrollbar-thumb {
+            background: #555;
+            border-radius: 10px;
+        }
+
+        .logs-container::-webkit-scrollbar-thumb:hover {
+            background: #777;
+        }
+
+        .alert {
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin: 15px 0;
+            font-weight: 500;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📱 iOS Backup</h1>
+        </div>
+
+        <div class="device-selector" id="device-selector">
+            <label for="device-select">iPhone auswählen:</label>
+            <select id="device-select">
+                <option value="">-- Bitte wählen --</option>
+            </select>
+        </div>
+
+        <div id="device-info" class="device-info hidden">
+            <div class="device-info-row">
+                <div class="device-info-block">
+                    <p><strong>IP:</strong> <span id="device-ip"></span></p>
+                    <p><strong>UUID:</strong> <span id="device-uuid"></span></p>
+                </div>
+
+                <div class="device-info-block pair-record-section">
+                    <details class="pair-record-details">
+                        <summary>🔑 Pairing Record aktualisieren</summary>
+                        <div style="margin-top: 10px;">
+                            <button id="btn-clipboard" class="btn-clipboard">Inhalt aus Clipboard einfügen</button>
+                            <div id="clipboard-message"></div>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        </div>
+
+        <div class="buttons">
+            <button id="btn-start" class="btn-start" disabled>▶️ Start</button>
+            <button id="btn-stop" class="btn-stop" disabled>⏹️ Stopp</button>
+        </div>
+
+        <div class="logs-section">
+            <h2 id="progress-title">📋 Fortschritt</h2>
+            
+            <div class="progress-bar">
+                <div id="progress-fill" class="progress-fill" style="width: 0%;"></div>
+                <div id="progress-text" class="progress-text">0%</div>
+            </div>
+            
+            <div id="logs" class="logs-container">Keine Logs vorhanden.</div>
+        </div>
+    </div>
+
+    <script>
+        // BASE_URL wird vom Server injiziert
+        const BASE_URL = window.BASE_URL || '';
+
+        // State
+        let devices = {};
+        let selectedDevice = null;
+        let isRunning = false;
+        let eventSource = null;
+        let currentProgress = 0;
+
+        // DOM-Elemente
+        const progressTitle = document.getElementById('progress-title');
+        const deviceSelector = document.getElementById('device-selector');
+        const deviceSelect = document.getElementById('device-select');
+        const deviceInfo = document.getElementById('device-info');
+        const deviceIP = document.getElementById('device-ip');
+        const deviceUUID = document.getElementById('device-uuid');
+        const btnStart = document.getElementById('btn-start');
+        const btnStop = document.getElementById('btn-stop');
+        const btnClipboard = document.getElementById('btn-clipboard');
+        const clipboardMessage = document.getElementById('clipboard-message');
+        const logsEl = document.getElementById('logs');
+        const progressFill = document.getElementById('progress-fill');
+        const progressText = document.getElementById('progress-text');
+
+        // API-Calls mit BASE_URL
+        async function api(endpoint, method = 'GET', data = null) {
+            const options = {
+                method,
+                headers: { 'Content-Type': 'application/json' }
+            };
+            if (data) options.body = JSON.stringify(data);
+            
+            const response = await fetch(BASE_URL + endpoint, options);
+            return response.json();
+        }
+
+        // Status laden
+        async function loadStatus() {
+            const status = await api('/api/status');
+            isRunning = status.running;
+            
+            if (isRunning) {
+                progressTitle.textContent = `🟢 Backup läuft: ${status.device}`;
+                deviceInfo.classList.add('hidden');
+                deviceSelector.classList.add('hidden');
+                deviceSelect.disabled = true;
+                btnStart.disabled = true;
+                btnStop.disabled = false;
+                
+                // Update progress from status
+                if (status.progress !== undefined) {
+                    currentProgress = status.progress;
+                    progressFill.style.width = status.progress + '%';
+                    progressText.textContent = status.progress + '%';
+                }
+                
+                // Server-Sent Events für Live-Updates
+                startEventStream();
+            } else {
+                progressTitle.textContent = '⚪ Bereit';
+                deviceSelect.disabled = false;
+                btnStop.disabled = true;
+                updateButtons();
+                deviceSelector.classList.remove('hidden');
+                if (selectedDevice) {
+                    deviceInfo.classList.remove('hidden');
+                }
+                
+                // Finale Logs laden
+                loadLogs();
+            }
+        }
+
+        // Devices laden
+        async function loadDevices() {
+            devices = await api('/api/devices');
+            
+            // Dropdown füllen
+            for (const [name, info] of Object.entries(devices)) {
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = name;
+                deviceSelect.appendChild(option);
+            }
+            
+            // Auto-detect user by IP
+            autoDetectDevice();
+        }
+
+        // Device automatisch erkennen
+        async function autoDetectDevice() {
+            try {
+                // Client-IP über den Server ermitteln
+                const response = await fetch(BASE_URL + '/api/my-ip');
+                const data = await response.json();
+                const myIp = data.ip;
+                
+                // Passendes Gerät nach IP finden
+                for (const [name, info] of Object.entries(devices)) {
+                    if (info.ip === myIp) {
+                        deviceSelect.value = name;
+                        selectedDevice = name;
+                        deviceIP.textContent = info.ip;
+                        deviceUUID.textContent = info.pair_record;
+                        deviceInfo.classList.remove('hidden');
+                        btnStart.disabled = false;
+                        return;
+                    }
+                }
+            } catch (error) {
+                console.log('Auto-detect fehlgeschlagen:', error);
+            }
+        }
+
+        // Device-Auswahl
+        deviceSelect.addEventListener('change', (e) => {
+            selectedDevice = e.target.value;
+            
+            if (selectedDevice) {
+                const device = devices[selectedDevice];
+                deviceIP.textContent = device.ip;
+                deviceUUID.textContent = device.pair_record;
+                deviceInfo.classList.remove('hidden');
+                btnStart.disabled = false;
+            } else {
+                deviceInfo.classList.add('hidden');
+                btnStart.disabled = true;
+            }
+        });
+
+        // Backup starten
+        btnStart.addEventListener('click', async () => {
+            if (!selectedDevice) return;
+            
+            try {
+                currentProgress = 0;
+                updateProgress(0); // UI auch zurücksetzen
+                logsEl.textContent = 'Keine Logs vorhanden.';
+                await api('/api/start', 'POST', { device: selectedDevice });
+                await loadStatus();
+            } catch (error) {
+                alert('Fehler beim Starten: ' + error.message);
+            }
+        });
+
+        // Backup stoppen
+        btnStop.addEventListener('click', async () => {
+            try {
+                await api('/api/stop', 'POST');
+                if (eventSource) {
+                    eventSource.close();
+                    eventSource = null;
+                }
+                await loadStatus();
+            } catch (error) {
+                alert('Fehler beim Stoppen: ' + error.message);
+            }
+        });
+
+        // Clipboard-Button
+        btnClipboard.addEventListener('click', async () => {
+            try {
+                const content = await navigator.clipboard.readText();
+                
+                if (!content) {
+                    showClipboardMessage('Clipboard ist leer', 'error');
+                    return;
+                }
+                
+                const result = await api('/api/update-pair-record', 'POST', {
+                    device: selectedDevice,
+                    content: content
+                });
+                
+                if (result.success) {
+                    showClipboardMessage('✅ Pairing Record aktualisiert', 'success');
+                } else {
+                    showClipboardMessage('❌ Fehler: ' + result.error, 'error');
+                }
+            } catch (error) {
+                showClipboardMessage('❌ Clipboard-Zugriff verweigert (HTTPS nötig)', 'error');
+            }
+        });
+
+        // Clipboard-Nachricht anzeigen
+        function showClipboardMessage(message, type) {
+            clipboardMessage.innerHTML = `<div class="alert alert-${type}">${message}</div>`;
+            setTimeout(() => {
+                clipboardMessage.innerHTML = '';
+            }, 5000);
+        }
+
+        // Logs laden
+        async function loadLogs() {
+            try {
+                const data = await api('/api/logs');
+                logsEl.textContent = data.logs || 'Keine Logs vorhanden.';
+                updateProgress(data.progress);
+                
+                // Auto-scroll
+                logsEl.scrollTop = logsEl.scrollHeight;
+            } catch (error) {
+                console.error('Fehler beim Laden der Logs:', error);
+            }
+        }
+
+        // Server-Sent Events für Live-Updates
+        function startEventStream() {
+            if (eventSource) eventSource.close();
+            
+            eventSource = new EventSource(BASE_URL + '/api/stream');
+            
+            eventSource.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                
+                if (data.done) {
+                    eventSource.close();
+                    eventSource = null;
+                    loadStatus();
+                    return;
+                }
+                
+                if (data.logs) {
+                    logsEl.textContent += data.logs;
+                    logsEl.scrollTop = logsEl.scrollHeight;
+                }
+            };
+            
+            eventSource.onerror = () => {
+                eventSource.close();
+                eventSource = null;
+                loadStatus();
+            };
+        }
+
+        // Fortschritt aktualisieren
+        function updateProgress(percent) {
+            if (percent > currentProgress) {
+                currentProgress = percent;
+                progressFill.style.width = percent + '%';
+                progressText.textContent = percent + '%';
+            }
+        }
+
+        // Buttons aktualisieren
+        function updateButtons() {
+            if (isRunning) {
+                btnStart.disabled = true;
+                btnStop.disabled = false;
+            } else {
+                btnStart.disabled = !selectedDevice;
+                btnStop.disabled = true;
+            }
+        }
+
+        // Polling für Logs (wenn nicht running)
+        setInterval(() => {
+            if (!isRunning && selectedDevice) {
+                loadLogs();
+            }
+        }, 2000);
+
+        // Polling für Status
+        setInterval(loadStatus, 3000);
+
+        // Polling für Progress während Backup läuft
+        setInterval(async () => {
+            if (isRunning) {
+                const status = await api('/api/status');
+                if (status.progress !== undefined) {
+                    updateProgress(status.progress);
+                }
+            }
+        }, 1000);
+
+        // Init
+        loadDevices();
+        loadStatus();
+    </script>
+</body>
+</html>

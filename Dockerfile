@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y \
 	libavahi-client-dev \
 	libusb-1.0-0-dev \
 	clang \
-	python3 python3-pip
+	python3
 
 WORKDIR /app
 
@@ -35,8 +35,6 @@ RUN git clone https://github.com/libimobiledevice/libplist.git && \
 	git clone https://github.com/fosple/usbmuxd2.git && \
 	cd usbmuxd2 && ./autogen.sh && ./configure CC=clang CXX=clang++ && make && make install && \
 	cd ..
-	
-RUN pip install --no-cache-dir --break-system-packages streamlit
 
 # Wichtig: ldconfig laufen lassen, damit die Pfade stimmen
 RUN ldconfig
@@ -57,7 +55,6 @@ RUN apt-get update && apt-get install -y \
 # === Multi-Stage ===
 # Kopiere die kompilierten Bibliotheken & Binaries aus der "builder" Stage
 COPY --from=builder /usr/local/lib/lib*.so* /usr/local/lib/
-COPY --from=builder /usr/local/lib/python3.11 /usr/local/lib/python3.11
 COPY --from=builder /usr/local/bin /usr/local/bin
 COPY --from=builder /usr/local/sbin /usr/local/sbin
 
@@ -67,5 +64,5 @@ RUN ldconfig
 WORKDIR /app
 
 # Port und App starten
-ENV PORT=8501
-CMD ["sh", "-c", "streamlit run ui.py --server.port=$PORT --server.address=0.0.0.0"]
+ENV PORT=89
+CMD ["python3", "-u", "server.py"]
