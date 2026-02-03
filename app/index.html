@@ -112,7 +112,7 @@
             background: #f8f9fa;
             padding: 20px;
             border-radius: 10px;
-            margin: 20px 0;
+            margin: 10px 0;
         }
 
         .device-info p {
@@ -331,6 +331,9 @@
                 <div class="device-info-block">
                     <p><strong>IP:</strong> <span id="device-ip"></span></p>
                     <p><strong>UUID:</strong> <span id="device-uuid"></span></p>
+                    <p><strong>Letztes Backup:</strong> <span id="last-backup-date">–</span></p>
+                    <p><strong>Typ:</strong> <span id="product-type">–</span></p>
+                    <p><strong>Version:</strong> <span id="product-version">–</span></p>
                 </div>
 
                 <div class="device-info-block pair-record-section">
@@ -382,6 +385,9 @@
         const deviceInfo = document.getElementById('device-info');
         const deviceIP = document.getElementById('device-ip');
         const deviceUUID = document.getElementById('device-uuid');
+        const lastBackupDate = document.getElementById('last-backup-date');
+        const productType = document.getElementById('product-type');
+        const productVersion = document.getElementById('product-version');
         const btnStart = document.getElementById('btn-start');
         const btnStop = document.getElementById('btn-stop');
         const btnClipboard = document.getElementById('btn-clipboard');
@@ -481,6 +487,7 @@
                         deviceUUID.textContent = info.pair_record;
                         deviceInfo.classList.remove('hidden');
                         btnStart.disabled = false;
+                        await loadBackupInfo(name);
                         return;
                     }
                 }
@@ -499,11 +506,33 @@
                 deviceUUID.textContent = device.pair_record;
                 deviceInfo.classList.remove('hidden');
                 btnStart.disabled = false;
+                loadBackupInfo(selectedDevice);
             } else {
                 deviceInfo.classList.add('hidden');
                 btnStart.disabled = true;
             }
         });
+
+        async function loadBackupInfo(deviceName) {
+            try {
+                const response = await fetch(`${BASE_URL}/api/backup-info?device=${encodeURIComponent(deviceName)}`);
+                const data = await response.json();
+                const info = data.info;
+                if (info) {
+                    lastBackupDate.textContent = info.last_backup_date || '–';
+                    productType.textContent = info.product_type || '–';
+                    productVersion.textContent = info.product_version || '–';
+                } else {
+                    lastBackupDate.textContent = '–';
+                    productType.textContent = '–';
+                    productVersion.textContent = '–';
+                }
+            } catch (error) {
+                lastBackupDate.textContent = '–';
+                productType.textContent = '–';
+                productVersion.textContent = '–';
+            }
+        }
 
         // Backup starten
         btnStart.addEventListener('click', async () => {

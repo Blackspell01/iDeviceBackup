@@ -3,6 +3,7 @@
 
 import json
 import os
+import plistlib
 import re
 import socket
 import subprocess
@@ -16,6 +17,7 @@ from urllib.parse import urlparse
 BASE_URL = os.environ.get("BASE_URL", "").rstrip("/")
 LOG_FILE = "./logs/backup.log"
 PAIR_RECORD_DIR = "/var/lib/lockdown"
+BACKUP_DIR = "/iPhone"
 
 # Ensure log directory exists
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
@@ -113,6 +115,34 @@ def get_client_ip(headers, client_address):
     return ip
 
 
+def read_backup_info(device_name):
+    device = DEVICES.get(device_name)
+    if not device:
+        return None
+    backup_dir = os.path.join(BACKUP_DIR, device["pair_record"])
+    info_path = os.path.join(backup_dir, "Info.plist")
+    if not os.path.exists(info_path):
+        return None
+    try:
+        with open(info_path, "rb") as f:
+            info = plistlib.load(f)
+        
+        # Format datetime nicely
+        last_backup = info.get("Last Backup Date")
+        if last_backup and hasattr(last_backup, 'strftime'):
+            last_backup = last_backup.strftime("%d.%m.%Y, %H:%M")
+        elif last_backup:
+            last_backup = str(last_backup)
+        
+        return {
+            "last_backup_date": last_backup,
+            "product_type": info.get("Product Type"),
+            "product_version": info.get("Product Version"),
+        }
+    except Exception:
+        return None
+
+
 def kill_processes():
     subprocess.run(["killall", "-9", "usbmuxd", "idevicebackup2"], capture_output=True)
 
@@ -200,7 +230,7 @@ def run_backup(device_name):
             log_line(f"Device info konnte nicht abgerufen werden: {e}")
 
         backup = subprocess.Popen(
-            ["stdbuf", "-oL", "idevicebackup2", "backup", "-n", "/iPhone"],
+            ["stdbuf", "-oL", "idevicebackup2", "backup", "-n", BACKUP_DIR],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
@@ -280,6 +310,18 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/my-ip":
             client_ip = get_client_ip(self.headers, self.client_address)
             return self._json({"ip": client_ip})
+
+        if path == "/api/backup-info":
+            query = urlparse(self.path).query
+            params = {}
+            if query:
+                for part in query.split("&"):
+                    if "=" in part:
+                        k, v = part.split("=", 1)
+                        params[k] = v
+            device_name = params.get("device")
+            info = read_backup_info(device_name) if device_name else None
+            return self._json({"info": info})
 
         if path == "/api/logs":
             if os.path.exists(LOG_FILE):
