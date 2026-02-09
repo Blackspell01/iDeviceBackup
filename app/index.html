@@ -321,9 +321,34 @@
 
         <div class="device-selector" id="device-selector">
             <label for="device-select">iPhone auswählen:</label>
-            <select id="device-select">
-                <option value="">-- Bitte wählen --</option>
-            </select>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap: wrap;">
+                <select id="device-select">
+                    <option value="">-- Bitte wählen --</option>
+                </select>
+                <button id="btn-add-device" title="Gerät hinzufügen" style="padding:10px 14px; font-size:16px; background:#2196f3; color:#fff; border-radius:8px;">＋</button>
+                <button id="btn-edit-device" title="Gerät bearbeiten" style="padding:10px 14px; font-size:16px; background:#ffa000; color:#fff; border-radius:8px;">✎ Bearbeiten</button>
+            </div>
+            <div id="device-form" class="hidden" style="margin-top:10px; background:#f8f9fa; padding:10px; border-radius:8px;">
+                <div style="display:flex; gap:10px; flex-wrap: wrap;">
+                    <div style="flex:1 1 160px; min-width:160px;">
+                        <label for="input-device-name" style="font-weight:600; color:#555;">Name</label>
+                        <input id="input-device-name" type="text" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px;">
+                    </div>
+                    <div style="flex:1 1 160px; min-width:160px;">
+                        <label for="input-device-ip" style="font-weight:600; color:#555;">IP</label>
+                        <input id="input-device-ip" type="text" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px;">
+                    </div>
+                    <div style="flex:1 1 220px; min-width:200px;">
+                        <label for="input-device-uuid" style="font-weight:600; color:#555;">UUID</label>
+                        <input id="input-device-uuid" type="text" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px;">
+                    </div>
+                </div>
+                <div style="margin-top:10px; display:flex; gap:10px;">
+                    <button id="btn-save-device" style="background:#4caf50; color:#fff;">Speichern</button>
+                    <button id="btn-cancel-device" style="background:#9e9e9e; color:#fff;">Abbrechen</button>
+                </div>
+                <div id="device-form-msg" style="margin-top:8px;"></div>
+            </div>
         </div>
 
         <div id="device-info" class="device-info hidden">
@@ -395,6 +420,17 @@
         const logsEl = document.getElementById('logs');
         const progressFill = document.getElementById('progress-fill');
         const progressText = document.getElementById('progress-text');
+        const btnAddDevice = document.getElementById('btn-add-device');
+        const btnEditDevice = document.getElementById('btn-edit-device');
+        const deviceForm = document.getElementById('device-form');
+        const inputDeviceName = document.getElementById('input-device-name');
+        const inputDeviceIP = document.getElementById('input-device-ip');
+        const inputDeviceUUID = document.getElementById('input-device-uuid');
+        const btnSaveDevice = document.getElementById('btn-save-device');
+        const btnCancelDevice = document.getElementById('btn-cancel-device');
+        const deviceFormMsg = document.getElementById('device-form-msg');
+        let editMode = null; // 'add' | 'edit'
+        let editOriginalName = null;
 
         // API-Calls mit BASE_URL
         async function api(endpoint, method = 'GET', data = null) {
@@ -457,17 +493,26 @@
         // Devices laden
         async function loadDevices() {
             devices = await api('/api/devices');
-            
-            // Dropdown füllen
+            renderDeviceOptions();
+            autoDetectDevice();
+        }
+
+        function renderDeviceOptions() {
+            // Clear existing
+            while (deviceSelect.firstChild) deviceSelect.removeChild(deviceSelect.firstChild);
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = '-- Bitte wählen --';
+            deviceSelect.appendChild(placeholder);
             for (const [name, info] of Object.entries(devices)) {
                 const option = document.createElement('option');
                 option.value = name;
                 option.textContent = name;
                 deviceSelect.appendChild(option);
             }
-            
-            // Auto-detect user by IP
-            autoDetectDevice();
+            if (selectedDevice && devices[selectedDevice]) {
+                deviceSelect.value = selectedDevice;
+            }
         }
 
         // Device automatisch erkennen
@@ -510,6 +555,90 @@
             } else {
                 deviceInfo.classList.add('hidden');
                 btnStart.disabled = true;
+            }
+            hideDeviceForm();
+        });
+
+        function showDeviceForm(mode) {
+            editMode = mode;
+            deviceForm.classList.remove('hidden');
+            deviceFormMsg.innerHTML = '';
+            if (mode === 'add') {
+                editOriginalName = null;
+                inputDeviceName.value = '';
+                inputDeviceIP.value = '';
+                inputDeviceUUID.value = '';
+            } else if (mode === 'edit' && selectedDevice) {
+                editOriginalName = selectedDevice;
+                const d = devices[selectedDevice] || {};
+                inputDeviceName.value = selectedDevice;
+                inputDeviceIP.value = d.ip || '';
+                inputDeviceUUID.value = d.pair_record || '';
+            }
+        }
+
+        function hideDeviceForm() {
+            deviceForm.classList.add('hidden');
+            editMode = null;
+            editOriginalName = null;
+        }
+
+        btnAddDevice.addEventListener('click', (e) => {
+            e.preventDefault();
+            showDeviceForm('add');
+        });
+
+        btnEditDevice.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (!selectedDevice) {
+                alert('Bitte zuerst ein Gerät auswählen');
+                return;
+            }
+            showDeviceForm('edit');
+        });
+
+        btnCancelDevice.addEventListener('click', (e) => {
+            e.preventDefault();
+            hideDeviceForm();
+        });
+
+        btnSaveDevice.addEventListener('click', async (e) => {
+            e.preventDefault();
+            const name = inputDeviceName.value.trim();
+            const ip = inputDeviceIP.value.trim();
+            const uuid = inputDeviceUUID.value.trim();
+            if (!name) {
+                deviceFormMsg.innerHTML = '<div class="alert alert-error">Name darf nicht leer sein</div>';
+                return;
+            }
+            try {
+                let payload = {};
+                if (editMode === 'add') {
+                    payload = { device: name, ip, uuid };
+                } else if (editMode === 'edit') {
+                    payload = { device: editOriginalName || name, ip, uuid };
+                    if (editOriginalName && editOriginalName !== name) {
+                        payload.newName = name;
+                    }
+                }
+                const res = await api('/api/devices', 'POST', payload);
+                if (res.error) {
+                    deviceFormMsg.innerHTML = `<div class="alert alert-error">${res.error}</div>`;
+                    return;
+                }
+                // Reload devices and select the new/edited one
+                devices = await api('/api/devices');
+                renderDeviceOptions();
+                selectedDevice = name;
+                deviceSelect.value = selectedDevice;
+                const d = devices[selectedDevice] || {};
+                deviceIP.textContent = d.ip || '';
+                deviceUUID.textContent = d.pair_record || '';
+                deviceInfo.classList.remove('hidden');
+                btnStart.disabled = !selectedDevice;
+                hideDeviceForm();
+            } catch (err) {
+                deviceFormMsg.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
             }
         });
 

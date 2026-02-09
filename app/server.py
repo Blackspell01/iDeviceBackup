@@ -1,11 +1,9 @@
-#!/usr/bin/env python3
-"""iPhone Backup Manager - minimal HTTP server"""
-
 import json
 import os
 import plistlib
 import re
 import socket
+import sqlite3
 import subprocess
 import threading
 import time
@@ -14,24 +12,148 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
 # === CONFIG ===
-BASE_URL = os.environ.get("BASE_URL", "").rstrip("/")
-LOG_FILE = "./logs/backup.log"
+BASE_URL = os.environ.get("BASE_URL", "")
+LOG_FILE = "./logfile.log"
+DB_FILE = "./backup.db"
+FRONTEND_FILE = "./index.html"
 PAIR_RECORD_DIR = "/var/lib/lockdown"
 BACKUP_DIR = "/iPhone"
 
-# Ensure log directory exists
-os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 
-DEVICES = {
-    "Simon": {"ip": "192.168.188.201", "pair_record": "00008120-0016390A2100201E"},
-    "Thomas": {"ip": "192.168.188.67", "pair_record": "00008110-001109460CF1801E"},
-    "Jasmin": {"ip": "192.168.188.30", "pair_record": "00008101-00196C3C0206001E"},
-    "Petra": {"ip": "192.168.188.69", "pair_record": "00008110-000868AE2212801E"},
-}
+# Ensure directories exist
+os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+os.makedirs(os.path.dirname(DB_FILE), exist_ok=True)
+os.makedirs(PAIR_RECORD_DIR, exist_ok=True)
+
 
 STATE = {"running": False, "device": None, "progress": 0, "device_info": None}
 STATE_LOCK = threading.Lock()
 STOP = threading.Event()
+
+
+# === DATABASE (single-table design) ===
+def _db_connect():
+    conn = sqlite3.connect(DB_FILE)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def _ensure_main_tables():
+    with _db_connect() as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pair_records (
+                name TEXT PRIMARY KEY,
+                ip TEXT,
+                uuid TEXT,
+                key BLOB
+            )
+            """
+        )
+        # Use a table name with a dot: quote it to be safe
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS "SystemConfig.plist" (
+                key BLOB
+            )
+            """
+        )
+
+
+def set_device(name: str, ip: str | None = None, uuid: str | None = None):
+    _ensure_main_tables()
+    with _db_connect() as conn:
+        row = conn.execute("SELECT name, ip, uuid FROM pair_records WHERE name = ?", (name,)).fetchone()
+        cur_ip = row["ip"] if row else None
+        cur_uuid = row["uuid"] if row else None
+        new_ip = ip if ip is not None else cur_ip
+        new_uuid = uuid if uuid is not None else cur_uuid
+        conn.execute(
+            "INSERT INTO pair_records(name, ip, uuid) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET ip=excluded.ip, uuid=excluded.uuid",
+            (name, new_ip, new_uuid),
+        )
+
+
+def get_device(name: str):
+    _ensure_main_tables()
+    with _db_connect() as conn:
+        row = conn.execute("SELECT name, ip, uuid FROM pair_records WHERE name = ?", (name,)).fetchone()
+        if not row:
+            return None
+        return {"name": row["name"], "ip": row["ip"], "uuid": row["uuid"]}
+
+
+def list_devices():
+    _ensure_main_tables()
+    with _db_connect() as conn:
+        rows = conn.execute("SELECT name, ip, uuid FROM pair_records ORDER BY name").fetchall()
+    return {r["name"]: {"ip": r["ip"], "pair_record": r["uuid"]} for r in rows}
+
+
+def set_pair_record_raw(name: str, raw: str | bytes):
+    _ensure_main_tables()
+    # store as bytes (BLOB); if string provided, encode utf-8
+    raw_bytes = raw if isinstance(raw, (bytes, bytearray)) else str(raw).encode("utf-8")
+    with _db_connect() as conn:
+        row = conn.execute("SELECT name FROM pair_records WHERE name=?", (name,)).fetchone()
+        if row:
+            conn.execute("UPDATE pair_records SET key=? WHERE name=?", (raw_bytes, name))
+        else:
+            conn.execute("INSERT INTO pair_records(name, key) VALUES(?,?)", (name, raw_bytes))
+
+
+def _set_system_config(raw: bytes | str):
+    _ensure_main_tables()
+    raw_bytes = raw if isinstance(raw, (bytes, bytearray)) else str(raw).encode("utf-8")
+    with _db_connect() as conn:
+        conn.execute('DELETE FROM "SystemConfig.plist"')
+        conn.execute('INSERT INTO "SystemConfig.plist"(key) VALUES(?)', (raw_bytes,))
+
+def _get_system_config() -> bytes | None:
+    _ensure_main_tables()
+    with _db_connect() as conn:
+        row = conn.execute('SELECT key FROM "SystemConfig.plist" LIMIT 1').fetchone()
+        return row[0] if row and row[0] else None
+
+def import_system_config_from_fs():
+    path = os.path.join(PAIR_RECORD_DIR, "SystemConfiguration.plist")
+    if os.path.exists(path):
+        try:
+            with open(path, "rb") as f:
+                data = f.read()
+            _set_system_config(data)
+            log_line("SystemConfiguration.plist aus FS in DB übernommen")
+        except Exception as e:
+            log_line(f"Konnte SystemConfiguration.plist nicht importieren: {e}")
+
+def export_system_config_to_fs():
+    data = _get_system_config()
+    if data is None:
+        return
+    try:
+        os.makedirs(PAIR_RECORD_DIR, exist_ok=True)
+        with open(os.path.join(PAIR_RECORD_DIR, "SystemConfiguration.plist"), "wb") as f:
+            f.write(data)
+    except Exception as e:
+        log_line(f"SystemConfiguration write failed: {e}")
+
+
+def write_pair_record_file(user: str):
+    """Write current pair_record values from DB to PAIR_RECORD_DIR/<uuid>.plist"""
+    dev = get_device(user)
+    if not dev or not dev.get("uuid"):
+        raise RuntimeError("uuid missing for user")
+    target = f"{PAIR_RECORD_DIR}/{dev['uuid']}.plist"
+
+    with _db_connect() as conn:
+        row = conn.execute("SELECT key FROM pair_records WHERE name=?", (user,)).fetchone()
+        raw_content = row[0] if row and row[0] else None
+    if not raw_content:
+        raise RuntimeError("no raw pair_record content in DB")
+    if not isinstance(raw_content, (bytes, bytearray)):
+        raw_content = str(raw_content).encode("utf-8")
+    with open(target, "wb") as f:
+        f.write(raw_content)
 
 
 def clear_logs():
@@ -116,10 +238,10 @@ def get_client_ip(headers, client_address):
 
 
 def read_backup_info(device_name):
-    device = DEVICES.get(device_name)
-    if not device:
+    dev = get_device(device_name)
+    if not dev or not dev.get("uuid"):
         return None
-    backup_dir = os.path.join(BACKUP_DIR, device["pair_record"])
+    backup_dir = os.path.join(BACKUP_DIR, dev["uuid"])
     info_path = os.path.join(backup_dir, "Info.plist")
     if not os.path.exists(info_path):
         return None
@@ -165,6 +287,14 @@ def is_connection_lost(line):
     return any(re.search(p, line) for p in patterns)
 
 
+def is_systemconfig_regenerated(line):
+    patterns = [
+        r"regenerating SystemConfiguration",
+        r"Failed to get SystemBuid",
+    ]
+    return any(re.search(p, line) for p in patterns)
+
+
 def stream_output(process, prefix=""):
     for line in iter(process.stdout.readline, ""):
         if STOP.is_set():
@@ -180,10 +310,21 @@ def stream_output(process, prefix=""):
         if prefix.startswith("usbmuxd") and is_connection_lost(line):
             stop_backup("⚠️ Verbindung verloren – Backup automatisch gestoppt")
             break
+        # If usbmuxd announces regeneration of SystemConfiguration, import it from FS into DB
+        if prefix.startswith("usbmuxd") and is_systemconfig_regenerated(line):
+            try:
+                # give usbmuxd a moment to write the file
+                time.sleep(0.5)
+                import_system_config_from_fs()
+            except Exception as e:
+                log_line(f"SystemConfiguration-Import fehlgeschlagen: {e}")
 
 
 def run_backup(device_name):
-    device = DEVICES[device_name]
+    dev = get_device(device_name)
+    if not dev or not dev.get("ip") or not dev.get("uuid"):
+        log_line(f"Geräte-Daten fehlen für '{device_name}' (ip/uuid) – Backup abgebrochen")
+        return
 
     STOP.clear()
     try:
@@ -196,9 +337,9 @@ def run_backup(device_name):
                 "-oL",
                 "usbmuxd",
                 "-c",
-                device["ip"],
+                dev["ip"],
                 "--pair-record-id",
-                device["pair_record"],
+                dev["uuid"],
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -305,7 +446,21 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"progress": STATE["progress"]})
 
         if path == "/api/devices":
-            return self._json(DEVICES)
+            # List devices or fetch single
+            query = urlparse(self.path).query
+            params = {}
+            if query:
+                for part in query.split("&"):
+                    if "=" in part:
+                        k, v = part.split("=", 1)
+                        params[k] = v
+            device_name = params.get("device")
+            if device_name:
+                dev = get_device(device_name)
+                if not dev:
+                    return self._json({"error": "Device not found"}, 404)
+                return self._json({device_name: {"ip": dev.get("ip"), "pair_record": dev.get("uuid")}})
+            return self._json(list_devices())
 
         if path == "/api/my-ip":
             client_ip = get_client_ip(self.headers, self.client_address)
@@ -323,6 +478,9 @@ class Handler(BaseHTTPRequestHandler):
             info = read_backup_info(device_name) if device_name else None
             return self._json({"info": info})
 
+        # /api/plist GET removed
+        
+
         if path == "/api/logs":
             if os.path.exists(LOG_FILE):
                 with open(LOG_FILE, "r") as f:
@@ -330,6 +488,8 @@ class Handler(BaseHTTPRequestHandler):
                     logs = "".join(lines[-200:])
                 return self._json({"logs": logs})
             return self._json({"logs": ""})
+
+        # /api/system-config GET removed
 
         if path == "/api/stream":
             self._sse_headers()
@@ -384,8 +544,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/start":
             device_name = data.get("device")
-            if not device_name or device_name not in DEVICES:
+            if not device_name:
                 return self._json({"error": "Invalid device"}, 400)
+            dev = get_device(device_name)
+            if not dev or not dev.get("ip") or not dev.get("uuid"):
+                return self._json({"error": "Device ip/uuid missing"}, 400)
             if get_status()["running"]:
                 return self._json({"error": "Backup already running"}, 400)
 
@@ -401,16 +564,67 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/update-pair-record":
             device_name = data.get("device")
             content = data.get("content")
-            if not device_name or device_name not in DEVICES:
+            uuid = data.get("uuid")
+            ip_override = data.get("ip")
+            if not device_name:
                 return self._json({"error": "Invalid device"}, 400)
             if not content:
                 return self._json({"error": "No content provided"}, 400)
             try:
-                record_id = DEVICES[device_name]["pair_record"]
-                target = f"{PAIR_RECORD_DIR}/{record_id}.plist"
-                with open(target, "w") as f:
-                    f.write(content)
+                # Determine uuid for pair-record filename
+                if not uuid:
+                    dev = get_device(device_name)
+                    uuid = dev.get("uuid") if dev else None
+                if not uuid:
+                    return self._json({"error": "uuid missing. Provide in request or set via POST /api/devices"}, 400)
+                # optionally set/update device record
+                if ip_override or uuid:
+                    try:
+                        set_device(device_name, ip=ip_override, uuid=uuid)
+                    except Exception as e:
+                        log_line(f"set_device failed: {e}")
+                # Store raw content EXACTLY as provided
+                set_pair_record_raw(device_name, content)
+                # Write plist file from DB
+                write_pair_record_file(device_name)
                 return self._json({"success": True})
+            except Exception as e:
+                return self._json({"error": str(e)}, 500)
+
+
+        if path == "/api/devices":
+            # Set device ip/uuid
+            device_name = data.get("device")
+            new_name = data.get("newName") or data.get("new_name")
+            ip = data.get("ip")
+            uuid = data.get("uuid")
+            if not device_name:
+                return self._json({"error": "Missing device"}, 400)
+            try:
+                # Rename if requested and source exists
+                if new_name and new_name != device_name:
+                    with _db_connect() as conn:
+                        # target name must not exist
+                        exists = conn.execute("SELECT 1 FROM pair_records WHERE name=?", (new_name,)).fetchone()
+                        if exists:
+                            return self._json({"error": "Device name already exists"}, 400)
+                        # update source or insert if missing
+                        src = conn.execute("SELECT name FROM pair_records WHERE name=?", (device_name,)).fetchone()
+                        if src:
+                            # update name first (PRIMARY KEY) and attributes atomically
+                            conn.execute("UPDATE pair_records SET name=? WHERE name=?", (new_name, device_name))
+                            if ip is not None:
+                                conn.execute("UPDATE pair_records SET ip=? WHERE name=?", (ip, new_name))
+                            if uuid is not None:
+                                conn.execute("UPDATE pair_records SET uuid=? WHERE name=?", (uuid, new_name))
+                        else:
+                            # create new row directly
+                            conn.execute("INSERT INTO pair_records(name, ip, uuid) VALUES(?,?,?)", (new_name, ip, uuid))
+                    device_name = new_name
+                else:
+                    set_device(device_name, ip=ip, uuid=uuid)
+                dev = get_device(device_name)
+                return self._json({"success": True, "device": device_name, "ip": dev.get("ip"), "uuid": dev.get("uuid")})
             except Exception as e:
                 return self._json({"error": str(e)}, 500)
 
@@ -425,9 +639,37 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    port = int(os.environ.get("PORT", "8502"))
+    port = int(os.environ.get("PORT"))
     set_status(False)
     clear_logs()
+
+    # Ensure DB is available and sync files
+    with _db_connect() as _:
+        pass
+    _ensure_main_tables()
+
+    # write all pair-record files (best-effort)
+    for user in list_devices().keys():
+        try:
+            write_pair_record_file(user)
+        except Exception as e:
+            log_line(f"Pair record sync skipped for {user}: {e}")
+    
+    # Sync SystemConfiguration.plist
+    # 1) Wenn in DB vorhanden -> in FS schreiben
+    data = _get_system_config()
+    if data is not None:
+        try:
+            os.makedirs(PAIR_RECORD_DIR, exist_ok=True)
+            with open(os.path.join(PAIR_RECORD_DIR, "SystemConfiguration.plist"), "wb") as f:
+                f.write(data)
+        except Exception as e:
+            log_line(f"SystemConfiguration write failed: {e}")
+    else:
+        # 2) Wenn nicht in DB, aber im FS vorhanden -> in DB importieren
+        import_system_config_from_fs()
+
+
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     print(f"🚀 iPhone Backup Manager läuft auf http://0.0.0.0:{port}")
     if BASE_URL:
