@@ -13,12 +13,11 @@ from urllib.parse import urlparse
 
 # === CONFIG ===
 BASE_URL = os.environ.get("BASE_URL", "")
-LOG_FILE = "./logfile.log"
-DB_FILE = "./backup.db"
+LOG_FILE = "./log.txt"
+DB_FILE = "./database.sqlite"
 FRONTEND_FILE = "./index.html"
 PAIR_RECORD_DIR = "/var/lib/lockdown"
 BACKUP_DIR = "/iPhone"
-
 
 # Ensure directories exist
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
@@ -50,7 +49,6 @@ def _ensure_main_tables():
             )
             """
         )
-        # Use a table name with a dot: quote it to be safe
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS "SystemConfig.plist" (
@@ -58,7 +56,6 @@ def _ensure_main_tables():
             )
             """
         )
-
 
 def set_device(name: str, ip: str | None = None, uuid: str | None = None):
     _ensure_main_tables()
@@ -625,6 +622,27 @@ class Handler(BaseHTTPRequestHandler):
                     set_device(device_name, ip=ip, uuid=uuid)
                 dev = get_device(device_name)
                 return self._json({"success": True, "device": device_name, "ip": dev.get("ip"), "uuid": dev.get("uuid")})
+            except Exception as e:
+                return self._json({"error": str(e)}, 500)
+
+        if path == "/api/devices/delete":
+            device_name = data.get("device")
+            if not device_name:
+                return self._json({"error": "Missing device"}, 400)
+            try:
+                # Read uuid to delete its plist file
+                dev = get_device(device_name)
+                with _db_connect() as conn:
+                    conn.execute("DELETE FROM pair_records WHERE name=?", (device_name,))
+                # Remove file if possible
+                try:
+                    if dev and dev.get("uuid"):
+                        path = os.path.join(PAIR_RECORD_DIR, f"{dev['uuid']}.plist")
+                        if os.path.exists(path):
+                            os.remove(path)
+                except Exception as fe:
+                    log_line(f"Konnte Pair-Record-Datei nicht löschen: {fe}")
+                return self._json({"success": True})
             except Exception as e:
                 return self._json({"error": str(e)}, 500)
 

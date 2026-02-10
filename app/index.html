@@ -212,13 +212,20 @@
         }
 
         .btn-clipboard {
-            background: #4caf50;
-            color: white;
-            grid-column: 1 / -1;
+            background: #f1f3f5;
+            border: 1px solid #dcdfe3;
+            color: #444;
+            padding: 6px 10px;
+            font-size: 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: inline-block;
         }
 
         .btn-clipboard:hover:not(:disabled) {
-            background: #45a049;
+            background: #e9ecef;
+            color: #222;
+            text-decoration: none;
         }
 
         .logs-section {
@@ -311,6 +318,37 @@
         .hidden {
             display: none;
         }
+
+        /* Inline edit affordance */
+        .editable {
+            border-bottom: 1px dotted transparent;
+            cursor: pointer;
+            display: inline-block;
+            min-width: 120px; /* clickable even when empty */
+        }
+        .editable:hover { border-bottom-color: #999; }
+        /* Enlarge click target when empty */
+        .editable:empty::after {
+            content: " ";
+            display: inline-block;
+            width: 100%;
+            height: 1.2em;
+        }
+        .inline-input {
+            padding: 4px 6px;
+            font-size: 0.95em;
+            border: 1px solid #bbb;
+            border-radius: 4px;
+            min-width: 140px;
+        }
+        .inline-input.invalid {
+            border-color: #e53935;
+            background: #ffebee;
+        }
+        .blink-ok {
+            animation: blinkok 0.8s ease;
+        }
+        @keyframes blinkok { from { background:#e8f5e9; } to { background:transparent; } }
     </style>
 </head>
 <body>
@@ -325,46 +363,29 @@
                 <select id="device-select">
                     <option value="">-- Bitte wählen --</option>
                 </select>
-                <button id="btn-add-device" title="Gerät hinzufügen" style="padding:10px 14px; font-size:16px; background:#2196f3; color:#fff; border-radius:8px;">＋</button>
-                <button id="btn-edit-device" title="Gerät bearbeiten" style="padding:10px 14px; font-size:16px; background:#ffa000; color:#fff; border-radius:8px;">✎ Bearbeiten</button>
             </div>
-            <div id="device-form" class="hidden" style="margin-top:10px; background:#f8f9fa; padding:10px; border-radius:8px;">
-                <div style="display:flex; gap:10px; flex-wrap: wrap;">
-                    <div style="flex:1 1 160px; min-width:160px;">
-                        <label for="input-device-name" style="font-weight:600; color:#555;">Name</label>
-                        <input id="input-device-name" type="text" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px;">
-                    </div>
-                    <div style="flex:1 1 160px; min-width:160px;">
-                        <label for="input-device-ip" style="font-weight:600; color:#555;">IP</label>
-                        <input id="input-device-ip" type="text" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px;">
-                    </div>
-                    <div style="flex:1 1 220px; min-width:200px;">
-                        <label for="input-device-uuid" style="font-weight:600; color:#555;">UUID</label>
-                        <input id="input-device-uuid" type="text" style="width:100%; padding:8px; border:1px solid #ccc; border-radius:6px;">
-                    </div>
-                </div>
-                <div style="margin-top:10px; display:flex; gap:10px;">
-                    <button id="btn-save-device" style="background:#4caf50; color:#fff;">Speichern</button>
-                    <button id="btn-cancel-device" style="background:#9e9e9e; color:#fff;">Abbrechen</button>
-                </div>
-                <div id="device-form-msg" style="margin-top:8px;"></div>
-            </div>
+            
         </div>
 
         <div id="device-info" class="device-info hidden">
             <div class="device-info-row">
                 <div class="device-info-block">
-                    <p><strong>IP:</strong> <span id="device-ip"></span></p>
-                    <p><strong>UUID:</strong> <span id="device-uuid"></span></p>
+                    <p><strong>Name:</strong> <span id="device-name" class="editable" title="Klicken zum Bearbeiten"></span></p>
+                    <p><strong>IP:</strong> <span id="device-ip" class="editable" title="Klicken zum Bearbeiten"></span></p>
+                    <p><strong>UUID:</strong> <span id="device-uuid" class="editable" title="Klicken zum Bearbeiten"></span></p>
                     <p><strong>Letztes Backup:</strong> <span id="last-backup-date">–</span></p>
                     <p><strong>Typ:</strong> <span id="product-type">–</span></p>
                     <p><strong>Version:</strong> <span id="product-version">–</span></p>
                 </div>
 
                 <div class="device-info-block pair-record-section">
+                    
                     <details class="pair-record-details">
-                        <summary>🔑 Pairing Record aktualisieren</summary>
-                        <div style="margin-top: 10px;">
+                        <summary style="display:flex; align-items:center; gap:10px;">
+                            <span>🔑 Pairing Record aktualisieren</span>
+                            <button id="btn-delete-device" class="link-btn" title="Gerät löschen" style="margin-left:auto; background:none; border:none; color:#888; padding:0; font-size:14px; cursor:pointer;">🗑️</button>
+                        </summary>
+                        <div class="pair-actions" style="margin-top:10px; padding-left:22px;">
                             <button id="btn-clipboard" class="btn-clipboard">Inhalt aus Clipboard einfügen</button>
                             <div id="clipboard-message"></div>
                         </div>
@@ -410,6 +431,8 @@
         const deviceInfo = document.getElementById('device-info');
         const deviceIP = document.getElementById('device-ip');
         const deviceUUID = document.getElementById('device-uuid');
+        const deviceNameSpan = document.getElementById('device-name');
+            const btnDeleteDevice = document.getElementById('btn-delete-device');
         const lastBackupDate = document.getElementById('last-backup-date');
         const productType = document.getElementById('product-type');
         const productVersion = document.getElementById('product-version');
@@ -420,17 +443,7 @@
         const logsEl = document.getElementById('logs');
         const progressFill = document.getElementById('progress-fill');
         const progressText = document.getElementById('progress-text');
-        const btnAddDevice = document.getElementById('btn-add-device');
-        const btnEditDevice = document.getElementById('btn-edit-device');
-        const deviceForm = document.getElementById('device-form');
-        const inputDeviceName = document.getElementById('input-device-name');
-        const inputDeviceIP = document.getElementById('input-device-ip');
-        const inputDeviceUUID = document.getElementById('input-device-uuid');
-        const btnSaveDevice = document.getElementById('btn-save-device');
-        const btnCancelDevice = document.getElementById('btn-cancel-device');
-        const deviceFormMsg = document.getElementById('device-form-msg');
-        let editMode = null; // 'add' | 'edit'
-        let editOriginalName = null;
+        
 
         // API-Calls mit BASE_URL
         async function api(endpoint, method = 'GET', data = null) {
@@ -510,9 +523,119 @@
                 option.textContent = name;
                 deviceSelect.appendChild(option);
             }
+            // Add option to create a new device at the end
+            const addOpt = document.createElement('option');
+            addOpt.value = '__add__';
+            addOpt.textContent = '＋ Gerät hinzufügen…';
+            deviceSelect.appendChild(addOpt);
             if (selectedDevice && devices[selectedDevice]) {
                 deviceSelect.value = selectedDevice;
             }
+        }
+
+        // Inline edit helpers
+        function isValidIPv4(value) {
+            const parts = value.split('.');
+            if (parts.length !== 4) return false;
+            return parts.every(p => {
+                if (!/^\d{1,3}$/.test(p)) return false;
+                const n = Number(p);
+                return n >= 0 && n <= 255 && (p.length === 1 || p[0] !== '0' || n === 0);
+            });
+        }
+
+        function inlineEdit(spanEl, field) {
+            if (!selectedDevice) return;
+            // Prevent multiple inputs
+            if (spanEl.dataset.editing === '1') return;
+            spanEl.dataset.editing = '1';
+
+            const initial = spanEl.textContent || '';
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'inline-input';
+            input.value = initial;
+            input.setAttribute('aria-label', field.toUpperCase() + ' bearbeiten');
+
+            const finish = async (commit) => {
+                spanEl.dataset.editing = '';
+                const newVal = input.value.trim();
+                // Restore span
+                input.replaceWith(spanEl);
+                if (!commit || newVal === initial) return; // no change
+
+                // Optional validation
+                if (field === 'ip' && !isValidIPv4(newVal)) {
+                    // brief invalid flash
+                    spanEl.textContent = initial;
+                    spanEl.classList.remove('blink-ok');
+                    spanEl.title = 'Ungültige IPv4-Adresse';
+                    return;
+                }
+
+                try {
+                    if (field === 'name') {
+                        // Rename device
+                        const res = await api('/api/devices', 'POST', { device: selectedDevice, newName: newVal });
+                        if (res && !res.error) {
+                            // Move entry in devices map
+                            const current = devices[selectedDevice] || {};
+                            delete devices[selectedDevice];
+                            devices[newVal] = current;
+                            selectedDevice = newVal;
+                            // Update UI
+                            spanEl.textContent = newVal;
+                            renderDeviceOptions();
+                            deviceSelect.value = selectedDevice;
+                            // success blink
+                            spanEl.classList.add('blink-ok');
+                            setTimeout(() => spanEl.classList.remove('blink-ok'), 800);
+                        } else {
+                            spanEl.textContent = initial;
+                            if (res && res.error) alert('Fehler: ' + res.error);
+                        }
+                    } else {
+                        // Update field ip/uuid
+                        const payload = { device: selectedDevice };
+                        payload[field] = newVal;
+                        const res = await api('/api/devices', 'POST', payload);
+                        if (res && !res.error) {
+                            if (!devices[selectedDevice]) devices[selectedDevice] = {};
+                            if (field === 'ip') {
+                                devices[selectedDevice].ip = newVal;
+                                spanEl.textContent = newVal;
+                            } else if (field === 'uuid') {
+                                devices[selectedDevice].pair_record = newVal;
+                                spanEl.textContent = newVal;
+                            }
+                            spanEl.classList.add('blink-ok');
+                            setTimeout(() => spanEl.classList.remove('blink-ok'), 800);
+                        } else {
+                            spanEl.textContent = initial;
+                            if (res && res.error) alert('Fehler: ' + res.error);
+                        }
+                    }
+                } catch (e) {
+                    spanEl.textContent = initial;
+                    alert('Fehler: ' + e.message);
+                }
+            };
+
+            // Replace span with input
+            spanEl.replaceWith(input);
+            input.focus();
+            input.select();
+
+            input.addEventListener('keydown', (ev) => {
+                if (ev.key === 'Enter') {
+                    ev.preventDefault();
+                    finish(true);
+                } else if (ev.key === 'Escape') {
+                    ev.preventDefault();
+                    finish(false);
+                }
+            });
+            input.addEventListener('blur', () => finish(true));
         }
 
         // Device automatisch erkennen
@@ -542,13 +665,47 @@
         }
 
         // Device-Auswahl
-        deviceSelect.addEventListener('change', (e) => {
+        deviceSelect.addEventListener('change', async (e) => {
             selectedDevice = e.target.value;
+            if (selectedDevice === '__add__') {
+                // Generate a unique default name
+                const base = 'Neues Gerät';
+                let newName = base;
+                let i = 1;
+                while (devices[newName]) { newName = base + ' ' + (++i); }
+                try {
+                    const res = await api('/api/devices', 'POST', { device: newName });
+                    if (res && res.error) {
+                        alert('Fehler: ' + res.error);
+                        // reset selection
+                        deviceSelect.value = '';
+                        selectedDevice = null;
+                        return;
+                    }
+                    // Reflect locally and reload devices
+                    devices[newName] = { ip: '', pair_record: '' };
+                    selectedDevice = newName;
+                    renderDeviceOptions();
+                    deviceSelect.value = selectedDevice;
+                    deviceNameSpan.textContent = selectedDevice;
+                    deviceIP.textContent = '';
+                    deviceUUID.textContent = '';
+                    deviceInfo.classList.remove('hidden');
+                    btnStart.disabled = false;
+                    return; // handled
+                } catch (err) {
+                    alert('Fehler beim Hinzufügen: ' + err.message);
+                    deviceSelect.value = '';
+                    selectedDevice = null;
+                    return;
+                }
+            }
             
             if (selectedDevice) {
                 const device = devices[selectedDevice];
-                deviceIP.textContent = device.ip;
-                deviceUUID.textContent = device.pair_record;
+                deviceNameSpan.textContent = selectedDevice;
+                    deviceIP.textContent = device.ip || '';
+                    deviceUUID.textContent = device.pair_record || '';
                 deviceInfo.classList.remove('hidden');
                 btnStart.disabled = false;
                 loadBackupInfo(selectedDevice);
@@ -556,91 +713,39 @@
                 deviceInfo.classList.add('hidden');
                 btnStart.disabled = true;
             }
-            hideDeviceForm();
+            
         });
 
-        function showDeviceForm(mode) {
-            editMode = mode;
-            deviceForm.classList.remove('hidden');
-            deviceFormMsg.innerHTML = '';
-            if (mode === 'add') {
-                editOriginalName = null;
-                inputDeviceName.value = '';
-                inputDeviceIP.value = '';
-                inputDeviceUUID.value = '';
-            } else if (mode === 'edit' && selectedDevice) {
-                editOriginalName = selectedDevice;
-                const d = devices[selectedDevice] || {};
-                inputDeviceName.value = selectedDevice;
-                inputDeviceIP.value = d.ip || '';
-                inputDeviceUUID.value = d.pair_record || '';
-            }
-        }
+        // Activate inline edit on click
+        deviceNameSpan.addEventListener('click', () => inlineEdit(deviceNameSpan, 'name'));
+        deviceIP.addEventListener('click', () => inlineEdit(deviceIP, 'ip'));
+        deviceUUID.addEventListener('click', () => inlineEdit(deviceUUID, 'uuid'));
 
-        function hideDeviceForm() {
-            deviceForm.classList.add('hidden');
-            editMode = null;
-            editOriginalName = null;
-        }
-
-        btnAddDevice.addEventListener('click', (e) => {
-            e.preventDefault();
-            showDeviceForm('add');
-        });
-
-        btnEditDevice.addEventListener('click', (e) => {
-            e.preventDefault();
-            if (!selectedDevice) {
-                alert('Bitte zuerst ein Gerät auswählen');
-                return;
-            }
-            showDeviceForm('edit');
-        });
-
-        btnCancelDevice.addEventListener('click', (e) => {
-            e.preventDefault();
-            hideDeviceForm();
-        });
-
-        btnSaveDevice.addEventListener('click', async (e) => {
-            e.preventDefault();
-            const name = inputDeviceName.value.trim();
-            const ip = inputDeviceIP.value.trim();
-            const uuid = inputDeviceUUID.value.trim();
-            if (!name) {
-                deviceFormMsg.innerHTML = '<div class="alert alert-error">Name darf nicht leer sein</div>';
-                return;
-            }
-            try {
-                let payload = {};
-                if (editMode === 'add') {
-                    payload = { device: name, ip, uuid };
-                } else if (editMode === 'edit') {
-                    payload = { device: editOriginalName || name, ip, uuid };
-                    if (editOriginalName && editOriginalName !== name) {
-                        payload.newName = name;
+            // Delete device (prevent toggling the details)
+            btnDeleteDevice.addEventListener('click', async (ev) => {
+                ev.stopPropagation();
+                if (!selectedDevice) return;
+                const confirmText = `Gerät "${selectedDevice}" wirklich löschen?\nDies entfernt auch die gespeicherte Pair-Record-Datei (falls vorhanden).`;
+                if (!confirm(confirmText)) return;
+                try {
+                    const res = await api('/api/devices/delete', 'POST', { device: selectedDevice });
+                    if (res && !res.error) {
+                        // Update local state
+                        delete devices[selectedDevice];
+                        selectedDevice = null;
+                        renderDeviceOptions();
+                        deviceSelect.value = '';
+                        deviceInfo.classList.add('hidden');
+                        btnStart.disabled = true;
+                    } else {
+                        alert('Fehler: ' + (res && res.error ? res.error : 'Unbekannt'));
                     }
+                } catch (e) {
+                    alert('Fehler beim Löschen: ' + e.message);
                 }
-                const res = await api('/api/devices', 'POST', payload);
-                if (res.error) {
-                    deviceFormMsg.innerHTML = `<div class="alert alert-error">${res.error}</div>`;
-                    return;
-                }
-                // Reload devices and select the new/edited one
-                devices = await api('/api/devices');
-                renderDeviceOptions();
-                selectedDevice = name;
-                deviceSelect.value = selectedDevice;
-                const d = devices[selectedDevice] || {};
-                deviceIP.textContent = d.ip || '';
-                deviceUUID.textContent = d.pair_record || '';
-                deviceInfo.classList.remove('hidden');
-                btnStart.disabled = !selectedDevice;
-                hideDeviceForm();
-            } catch (err) {
-                deviceFormMsg.innerHTML = `<div class="alert alert-error">${err.message}</div>`;
-            }
-        });
+            });
+
+        
 
         async function loadBackupInfo(deviceName) {
             try {
