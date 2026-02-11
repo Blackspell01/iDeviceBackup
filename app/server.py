@@ -7,6 +7,7 @@ import sqlite3
 import subprocess
 import threading
 import time
+import mimetypes
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
@@ -15,7 +16,7 @@ from urllib.parse import urlparse
 BASE_URL = os.environ.get("BASE_URL", "")
 LOG_FILE = "./log.txt"
 DB_FILE = "./database.sqlite"
-FRONTEND_FILE = "./index.html"
+FRONTEND_DIR = "./frontend"
 PAIR_RECORD_DIR = "/var/lib/lockdown"
 BACKUP_DIR = "/iPhone"
 
@@ -421,19 +422,51 @@ class Handler(BaseHTTPRequestHandler):
 
     def _path(self):
         path = urlparse(self.path).path
-        if BASE_URL and path.startswith(BASE_URL):
-            path = path[len(BASE_URL) :]
+        if BASE_URL:
+            base_path = urlparse(BASE_URL).path
+            if base_path and path.startswith(base_path):
+                path = path[len(base_path):]
+                if not path.startswith('/'):
+                    path = '/' + path
         return path
 
     def do_GET(self):
         path = self._path()
 
+        # Serve index.html
         if path in ("", "/", "/index.html"):
-            with open("./index.html", "r") as f:
+            index_path = os.path.join(FRONTEND_DIR, "index.html")
+            with open(index_path, "r") as f:
                 html = f.read()
+            # Inject window.BASE_URL for API calls
+            html = html.replace("</head>", f'<script>window.BASE_URL = "{BASE_URL}";</script></head>', 1)
+            # Fix relative paths for CSS and JS to include BASE_URL
             if BASE_URL:
-                html = html.replace("</head>", f"<script>window.BASE_URL = \"{BASE_URL}\";</script></head>")
+                html = html.replace('href="styles.css"', f'href="{BASE_URL}/styles.css"')
+                html = html.replace('src="app.js"', f'src="{BASE_URL}/app.js"')
             return self._html(html)
+
+        # Serve CSS/JS files directly from frontend root
+        if path.endswith(".css") or path.endswith(".js") or path.endswith(".html"):
+            file_name = path.lstrip("/")
+            file_path = os.path.join(FRONTEND_DIR, file_name)
+            
+            if not os.path.isfile(file_path):
+                return self.send_error(404)
+            
+            mimetypes.init()
+            content_type, _ = mimetypes.guess_type(file_path)
+        
+            with open(file_path, "rb") as f:
+                data = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            self.wfile.write(data)
+            return
 
         if path == "/api/status":
             return self._json(get_status())
@@ -475,9 +508,6 @@ class Handler(BaseHTTPRequestHandler):
             info = read_backup_info(device_name) if device_name else None
             return self._json({"info": info})
 
-        # /api/plist GET removed
-        
-
         if path == "/api/logs":
             if os.path.exists(LOG_FILE):
                 with open(LOG_FILE, "r") as f:
@@ -485,8 +515,6 @@ class Handler(BaseHTTPRequestHandler):
                     logs = "".join(lines[-200:])
                 return self._json({"logs": logs})
             return self._json({"logs": ""})
-
-        # /api/system-config GET removed
 
         if path == "/api/stream":
             self._sse_headers()
@@ -675,16 +703,15 @@ def main():
     
     # Sync SystemConfiguration.plist
     # 1) Wenn in DB vorhanden -> in FS schreiben
+    # 2) Wenn nicht in DB, aber im FS vorhanden -> in DB importieren
     data = _get_system_config()
     if data is not None:
         try:
-            os.makedirs(PAIR_RECORD_DIR, exist_ok=True)
             with open(os.path.join(PAIR_RECORD_DIR, "SystemConfiguration.plist"), "wb") as f:
                 f.write(data)
         except Exception as e:
             log_line(f"SystemConfiguration write failed: {e}")
     else:
-        # 2) Wenn nicht in DB, aber im FS vorhanden -> in DB importieren
         import_system_config_from_fs()
 
 

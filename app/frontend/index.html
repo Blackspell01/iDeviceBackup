@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>📱 iPhone Backup Manager</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📱 iOS Backup</h1>
+        </div>
+
+        <div class="device-selector" id="device-selector">
+            <label for="device-select">iPhone auswählen:</label>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap: wrap;">
+                <select id="device-select">
+                    <option value="">-- Bitte wählen --</option>
+                </select>
+            </div>
+            
+        </div>
+
+        <div id="device-info" class="device-info hidden">
+            <div class="device-info-row">
+                <div class="device-info-block">
+                    <p><strong>Name:</strong> <span id="device-name" class="editable" title="Klicken zum Bearbeiten"></span></p>
+                    <p><strong>IP:</strong> <span id="device-ip" class="editable" title="Klicken zum Bearbeiten"></span></p>
+                    <p><strong>UUID:</strong> <span id="device-uuid" class="editable" title="Klicken zum Bearbeiten"></span></p>
+                    <p><strong>Letztes Backup:</strong> <span id="last-backup-date">–</span></p>
+                    <p><strong>Typ:</strong> <span id="product-type">–</span></p>
+                    <p><strong>Version:</strong> <span id="product-version">–</span></p>
+                </div>
+
+                <div class="device-info-block pair-record-section">
+                    
+                    <details class="pair-record-details">
+                        <summary style="display:flex; align-items:center; gap:10px;">
+                            <span>🔑 Pairing Record aktualisieren</span>
+                            <button id="btn-delete-device" class="link-btn" title="Gerät löschen" style="margin-left:auto; background:none; border:none; color:#888; padding:0; font-size:14px; cursor:pointer;">🗑️</button>
+                        </summary>
+                        <div class="pair-actions" style="margin-top:10px; padding-left:22px;">
+                            <button id="btn-clipboard" class="btn-clipboard">Inhalt aus Clipboard einfügen</button>
+                            <div id="clipboard-message"></div>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        </div>
+
+        <div class="buttons">
+            <button id="btn-start" class="btn-start" disabled>▶️ Start</button>
+            <button id="btn-stop" class="btn-stop" disabled>⏹️ Stopp</button>
+        </div>
+
+        <div class="logs-section">
+            <h2 id="progress-title">📋 Fortschritt</h2>
+            <div id="device-info-display" class="hidden" style="margin-bottom: 15px; color: #666; font-size: 0.9em;"></div>
+            
+            <div class="progress-bar">
+                <div id="progress-fill" class="progress-fill" style="width: 0%;"></div>
+                <div id="progress-text" class="progress-text">0%</div>
+            </div>
+            
+            <div id="logs" class="logs-container">Keine Logs vorhanden.</div>
+        </div>
+    </div>
+
+    <script src="app.js" defer></script>
+</body>
+</html>
