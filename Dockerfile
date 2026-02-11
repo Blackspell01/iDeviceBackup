@@ -63,6 +63,5 @@ RUN ldconfig
 
 WORKDIR /app
 
-# Port und App starten
-ENV PORT=89
-CMD ["python3", "-u", "server.py"]
+# App starten
+CMD ["python3", "-m", "backend.main"]
