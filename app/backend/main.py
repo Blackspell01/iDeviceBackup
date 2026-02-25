@@ -1,8 +1,7 @@
 import os
 from backend.config import BASE_URL, LOG_FILE, PORT, log_line, set_status
-from backend.database import _db_connect, _ensure_main_tables, list_devices
+from backend.database import _db_connect, _ensure_main_tables, list_devices, _get_system_config
 from backend.backup import write_pair_record_file, import_system_config_from_fs
-
 
 def main():
     set_status(False)
@@ -23,7 +22,6 @@ def main():
             log_line(f"Pair record sync skipped for {user}: {e}")
 
     # Sync SystemConfiguration.plist
-    from backend.database import _get_system_config
     data = _get_system_config()
     if data is not None:
         try:
@@ -35,9 +33,7 @@ def main():
     else:
         import_system_config_from_fs()
 
-    print(f"🚀 iPhone Backup Manager läuft auf http://0.0.0.0:{PORT}")
-    if BASE_URL:
-        print(f"📍 Base URL: {BASE_URL}")
+    print(f"🚀 iPhone Backup Manager läuft auf http://0.0.0.0:{PORT}{BASE_URL}")
 
 if __name__ == "__main__":
     main()
