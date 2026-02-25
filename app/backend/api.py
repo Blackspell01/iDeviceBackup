@@ -15,7 +15,7 @@ from backend.database import get_device, list_devices, set_device, set_pair_reco
 import threading
 
 
-app = FastAPI()
+app = FastAPI(root_path=BASE_URL)
 
 # CORS Middleware
 app.add_middleware(
@@ -311,26 +311,4 @@ async def api_devices_delete(request: DeleteDeviceRequest):
 
 
 # Static files
-@app.get("/{file_path:path}")
-async def serve_static(file_path: str):
-    if file_path.endswith(('.css', '.js', '.html')):
-        file_full_path = os.path.join(FRONTEND_DIR, file_path)
-        if not os.path.isfile(file_full_path):
-            raise HTTPException(status_code=404, detail="File not found")
-        
-        import mimetypes
-        mimetypes.init()
-        content_type, _ = mimetypes.guess_type(file_full_path)
-        
-        with open(file_full_path, "rb") as f:
-            data = f.read()
-        
-        return Response(
-            content=data,
-            media_type=content_type,
-            headers={
-                "Access-Control-Allow-Origin": "*",
-                "X-Content-Type-Options": "nosniff"
-            }
-        )
-    raise HTTPException(status_code=404, detail="Not found")
+app.mount("/", StaticFiles(directory=FRONTEND_DIR), name="static")
