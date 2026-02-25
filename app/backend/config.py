@@ -5,7 +5,7 @@ from datetime import datetime
 
 # === CONFIG ===
 BASE_URL = os.environ.get("BASE_URL", "")
-PORT = int(os.environ.get("PORT", 8000))
+PORT = int(os.environ.get("PORT"))
 LOG_FILE = "./log.txt"
 DB_FILE = "./database.sqlite"
 FRONTEND_DIR = "./frontend"

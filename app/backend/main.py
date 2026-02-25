@@ -1,4 +1,5 @@
 import os
+import uvicorn
 from backend.config import BASE_URL, LOG_FILE, PORT, log_line, set_status
 from backend.database import _db_connect, _ensure_main_tables, list_devices, _get_system_config
 from backend.backup import write_pair_record_file, import_system_config_from_fs
@@ -34,6 +35,7 @@ def main():
         import_system_config_from_fs()
 
     print(f"🚀 iPhone Backup Manager läuft auf http://0.0.0.0:{PORT}{BASE_URL}")
+    uvicorn.run("backend.api:app", host="0.0.0.0", port=PORT, reload=True)
 
 if __name__ == "__main__":
     main()
