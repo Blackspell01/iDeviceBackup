@@ -13,7 +13,7 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# 1. libimobiledevice & usbmuxd2 Kompilierung (Dein bestehender Block)
+# 1. libimobiledevice & usbmuxd2 kompilieren
 RUN git clone https://github.com/libimobiledevice/libplist.git && \
 	cd libplist && ./autogen.sh && make && make install && \
 	cd .. && \
@@ -60,12 +60,13 @@ COPY --from=builder /usr/local/bin /usr/local/bin
 COPY --from=builder /usr/local/sbin /usr/local/sbin
 
 # Kopiere die Python-Pakete
-COPY --from=builder /app/python_libs /usr/local/lib/python3/dist-packages
+COPY --from=builder /app/python_libs /usr/local/lib/python3.11/dist-packages/
 
 # Library Cache aktualisieren
 RUN ldconfig
 
 WORKDIR /app
+ENV PORT=89
 
-# Startbefehl via Python-Modul-Aufruf
-ENTRYPOINT ["start.sh"]
+# Startbefehl
+CMD ["./start.sh"]
