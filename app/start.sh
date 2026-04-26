@@ -1,2 +1,2 @@
 #!/bin/bash
-python -m backend.main
+python3 -m backend.main

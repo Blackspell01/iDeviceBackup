@@ -9,7 +9,6 @@ services:
     network_mode: host
     volumes:
       - /mnt/HDD/iOS/:/iPhone
-      - ./keys:/var/lib/lockdown
       - ./app:/app
     environment:
       - PORT=89

@@ -223,6 +223,40 @@ btnDeleteDevice.addEventListener('click', async (ev) => {
   } catch (e) { alert('Fehler beim Löschen: ' + e.message); }
 });
 
+// Start / Stop Buttons
+btnStart.addEventListener('click', async () => {
+  if (!selectedDevice) return;
+  try {
+    btnStart.disabled = true;
+    const res = await api('/api/start', 'POST', { device: selectedDevice });
+    if (res && res.success) {
+      await loadStatus();
+    } else {
+      alert('Fehler beim Starten des Backups.');
+      btnStart.disabled = false;
+    }
+  } catch (e) {
+    alert('Fehler beim Starten: ' + e.message);
+    btnStart.disabled = false;
+  }
+});
+
+btnStop.addEventListener('click', async () => {
+  try {
+    btnStop.disabled = true;
+    const res = await api('/api/stop', 'POST');
+    if (res && res.success) {
+      await loadStatus();
+    } else {
+      alert('Fehler beim Stoppen des Backups.');
+      btnStop.disabled = false;
+    }
+  } catch (e) {
+    alert('Fehler beim Stoppen: ' + e.message);
+    btnStop.disabled = false;
+  }
+});
+
 async function loadBackupInfo(deviceName) {
   try {
     const response = await fetch(`${BASE_URL}/api/backup-info?device=${encodeURIComponent(deviceName)}`);
