@@ -257,6 +257,19 @@ btnStop.addEventListener('click', async () => {
   }
 });
 
+btnClipboard.addEventListener('click', async () => {
+  if (!selectedDevice) { clipboardMessage.textContent = 'Bitte zuerst ein Gerät auswählen.'; return; }
+  if (!navigator.clipboard?.readText) { clipboardMessage.textContent = 'Clipboard-Zugriff nur über HTTPS.'; return; }
+  try {
+    btnClipboard.disabled = true;
+    const content = await navigator.clipboard.readText();
+    if (!content.trim()) { clipboardMessage.textContent = 'Clipboard ist leer.'; return; }
+    const res = await api('/api/update-pair-record', 'POST', { device: selectedDevice, content });
+    clipboardMessage.textContent = res?.success ? '✅ Pairing Record aktualisiert.' : 'Fehler: ' + (res?.error || 'Unbekannt');
+  } catch (e) { clipboardMessage.textContent = 'Fehler: ' + e.message; }
+  finally { btnClipboard.disabled = false; }
+});
+
 async function loadBackupInfo(deviceName) {
   try {
     const response = await fetch(`${BASE_URL}/api/backup-info?device=${encodeURIComponent(deviceName)}`);
