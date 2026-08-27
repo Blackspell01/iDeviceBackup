@@ -1,73 +1,34 @@
+import asyncio
 import os
-import re
 import plistlib
-import subprocess
 import threading
-import time
-from backend.config import PAIR_RECORD_DIR, BACKUP_DIR, STATE, STATE_LOCK, STOP, set_status, log_line
-from backend.database import get_device, _set_system_config, _get_system_config
+from pymobiledevice3.lockdown import create_using_tcp
+from pymobiledevice3.services.heartbeat import HeartbeatService
+from pymobiledevice3.services.mobilebackup2 import Mobilebackup2Service
+from backend.config import BACKUP_DIR, log_line, set_progress, set_device_info, set_error, finish_run
+from backend.database import get_device, get_pair_record
 
-def import_system_config_from_fs():
-    path = os.path.join(PAIR_RECORD_DIR, "SystemConfiguration.plist")
-    if os.path.exists(path):
-        try:
-            with open(path, "rb") as f:
-                data = f.read()
-            _set_system_config(data)
-            log_line("SystemConfiguration.plist aus FS in DB übernommen")
-        except Exception as e:
-            log_line(f"Konnte SystemConfiguration.plist nicht importieren: {e}")
+_INFO_KEYS = {"model": "ProductType", "version": "ProductVersion"}
 
-
-def export_system_config_to_fs():
-    data = _get_system_config()
-    if data is None:
-        return
-    try:
-        os.makedirs(PAIR_RECORD_DIR, exist_ok=True)
-        with open(os.path.join(PAIR_RECORD_DIR, "SystemConfiguration.plist"), "wb") as f:
-            f.write(data)
-    except Exception as e:
-        log_line(f"SystemConfiguration write failed: {e}")
-
-
-def write_pair_record_file(user: str):
-    dev = get_device(user)
-    if not dev or not dev.get("uuid"):
-        raise RuntimeError("uuid missing for user")
-    target = f"{PAIR_RECORD_DIR}/{dev['uuid']}.plist"
-
-    from backend.database import _db_connect
-
-    with _db_connect() as conn:
-        row = conn.execute("SELECT key FROM pair_records WHERE name=?", (user,)).fetchone()
-        raw_content = row[0] if row and row[0] else None
-    if not raw_content:
-        raise RuntimeError("no raw pair_record content in DB")
-    if not isinstance(raw_content, (bytes, bytearray)):
-        raw_content = str(raw_content).encode("utf-8")
-    with open(target, "wb") as f:
-        f.write(raw_content)
+_ACTIVE = {"loop": None, "task": None}
+_LOCK = threading.Lock()
 
 
 def read_backup_info(device_name: str):
     dev = get_device(device_name)
     if not dev or not dev.get("uuid"):
         return None
-    backup_dir = os.path.join(BACKUP_DIR, dev["uuid"])
-    info_path = os.path.join(backup_dir, "Info.plist")
+    info_path = os.path.join(BACKUP_DIR, dev["uuid"], "Info.plist")
     if not os.path.exists(info_path):
         return None
     try:
         with open(info_path, "rb") as f:
             info = plistlib.load(f)
-
         last_backup = info.get("Last Backup Date")
-        if last_backup and hasattr(last_backup, 'strftime'):
+        if hasattr(last_backup, "strftime"):
             last_backup = last_backup.strftime("%d.%m.%Y, %H:%M")
         elif last_backup:
             last_backup = str(last_backup)
-
         return {
             "last_backup_date": last_backup,
             "product_type": info.get("Product Type"),
@@ -77,123 +38,107 @@ def read_backup_info(device_name: str):
         return None
 
 
-def kill_processes():
-    subprocess.run(["killall", "-9", "usbmuxd", "idevicebackup2"], capture_output=True)
-
-
 def stop_backup(reason: str = None):
-    STOP.set()
-    kill_processes()
-    set_status(False)
+    with _LOCK:
+        loop, task = _ACTIVE.get("loop"), _ACTIVE.get("task")
+    if loop is not None and task is not None and not task.done():
+        loop.call_soon_threadsafe(task.cancel)
+    else:
+        finish_run()
     if reason:
         log_line(reason)
 
 
-def is_connection_lost(line: str) -> bool:
-    patterns = [
-        r"Lost connection to device",
-        r"Failed to start WIFIDevice",
-        r"Failed to add device",
-        r"Connection attempt .* failed",
-    ]
-    return any(re.search(p, line) for p in patterns)
+async def _heartbeat(lockdown):
+    try:
+        await HeartbeatService(lockdown).start()
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        log_line(f"Heartbeat beendet: {type(e).__name__}: {e}")
 
 
-def is_systemconfig_regenerated(line: str) -> bool:
-    patterns = [
-        r"regenerating SystemConfiguration",
-        r"Failed to get SystemBuid",
-    ]
-    return any(re.search(p, line) for p in patterns)
+async def _read_device_info(lockdown):
+    info = {}
+    for label, key in _INFO_KEYS.items():
+        try:
+            info[label] = await lockdown.get_value(key=key)
+        except Exception:
+            pass
+    return info
 
 
-def stream_output(process, prefix: str = ""):
-    for line in iter(process.stdout.readline, ""):
-        if STOP.is_set():
-            break
-        line = line.strip()
-        if not line:
-            continue
-        log_line(f"{prefix}{line}")
-        match = re.search(r"(\d+)% Finished", line)
-        if match:
-            with STATE_LOCK:
-                STATE["progress"] = int(match.group(1))
-        if prefix.startswith("usbmuxd") and is_connection_lost(line):
-            stop_backup("⚠️ Verbindung verloren – Backup automatisch gestoppt")
-            break
-        if prefix.startswith("usbmuxd") and is_systemconfig_regenerated(line):
+async def _run(device_name: str):
+    with _LOCK:
+        _ACTIVE["loop"] = asyncio.get_running_loop()
+        _ACTIVE["task"] = asyncio.current_task()
+
+    dev = get_device(device_name)
+    record = get_pair_record(device_name)
+    if not dev or not dev.get("ip") or not dev.get("uuid"):
+        log_line(f"❌ Geräte-Daten fehlen für '{device_name}' (IP oder UDID)")
+        set_error("Geräte-Daten unvollständig")
+        return
+    if not record:
+        log_line(f"❌ Kein Pair-Record für '{device_name}' hinterlegt")
+        set_error("Pair-Record fehlt")
+        return
+
+    lockdown = None
+    heartbeat = None
+    try:
+        log_line(f"Verbinde mit {dev['ip']} …")
+        lockdown = await create_using_tcp(
+            hostname=dev["ip"],
+            identifier=dev["uuid"],
+            pair_record=record,
+            autopair=False,
+            keep_alive=True,
+        )
+
+        info = await _read_device_info(lockdown)
+        if info:
+            set_device_info(info)
+            log_line(f"Verbunden: {info.get('model', '?')} · iOS {info.get('version', '?')}")
+
+        heartbeat = asyncio.create_task(_heartbeat(lockdown))
+        await asyncio.sleep(3)
+
+        async with Mobilebackup2Service(lockdown) as client:
+            log_line("Backup gestartet")
+            await client.backup(
+                full=False,
+                backup_directory=BACKUP_DIR,
+                progress_callback=set_progress,
+            )
+
+        set_progress(100)
+        log_line("✅ Backup abgeschlossen")
+
+    except asyncio.CancelledError:
+        log_line("⏹️ Abgebrochen")
+        raise
+    except Exception as e:
+        message = f"{type(e).__name__}: {e}"
+        log_line(f"❌ {message}")
+        set_error(message)
+    finally:
+        if heartbeat is not None:
+            heartbeat.cancel()
+        if lockdown is not None:
             try:
-                time.sleep(0.5)
-                import_system_config_from_fs()
-            except Exception as e:
-                log_line(f"SystemConfiguration-Import fehlgeschlagen: {e}")
+                await lockdown.close()
+            except Exception:
+                pass
 
 
 def run_backup(device_name: str):
-    dev = get_device(device_name)
-    if not dev or not dev.get("ip") or not dev.get("uuid"):
-        log_line(f"Geräte-Daten fehlen für '{device_name}' (ip/uuid) – Backup abgebrochen")
-        return
-
-    STOP.clear()
     try:
-        kill_processes()
-        time.sleep(1)
-
-        usbmuxd = subprocess.Popen(
-            [
-                "stdbuf",
-                "-oL",
-                "usbmuxd",
-                "-c",
-                dev["ip"],
-                "--pair-record-id",
-                dev["uuid"],
-            ],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-
-        threading.Thread(target=stream_output, args=(usbmuxd, "usbmuxd: "), daemon=True).start()
-        time.sleep(5)
-
-        # Get device info
-        try:
-            result = subprocess.run(
-                ["ideviceinfo", "-n"],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            if result.returncode == 0:
-                lines = result.stdout.strip().split("\n")
-                info = {}
-                for line in lines:
-                    if "ProductType:" in line:
-                        info["model"] = line.split(":", 1)[1].strip()
-                    elif "ProductVersion:" in line and "HumanReadable" not in line:
-                        info["version"] = line.split(":", 1)[1].strip()
-                if info:
-                    set_status(True, device_name, 0, info)
-        except Exception as e:
-            log_line(f"Device info konnte nicht abgerufen werden: {e}")
-
-        backup = subprocess.Popen(
-            ["stdbuf", "-oL", "idevicebackup2", "backup", "-n", BACKUP_DIR],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-
-        stream_output(backup)
-        backup.wait()
-
-    except Exception as e:
-        log_line(f"Fehler: {e}")
-
+        asyncio.run(_run(device_name))
+    except asyncio.CancelledError:
+        pass
     finally:
-        kill_processes()
-        set_status(False)
-        STOP.clear()
+        with _LOCK:
+            _ACTIVE["loop"] = None
+            _ACTIVE["task"] = None
+        finish_run()

@@ -5,43 +5,57 @@ from datetime import datetime
 
 # === CONFIG ===
 BASE_URL = os.environ.get("BASE_URL", "")
-PORT = int(os.environ.get("PORT"))
+PORT = int(os.environ.get("PORT", "89"))
 LOG_FILE = "./log.txt"
 DB_FILE = "./database.sqlite"
 FRONTEND_DIR = "./frontend"
-PAIR_RECORD_DIR = "/var/lib/lockdown"
 BACKUP_DIR = "/iPhone"
 
-# Ensure directories exist
-os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
-os.makedirs(os.path.dirname(DB_FILE), exist_ok=True)
-os.makedirs(PAIR_RECORD_DIR, exist_ok=True)
+os.makedirs(os.path.dirname(LOG_FILE) or ".", exist_ok=True)
+os.makedirs(os.path.dirname(DB_FILE) or ".", exist_ok=True)
 
 
-# Shared state for backup
-STATE = {"running": False, "device": None, "progress": 0, "device_info": None}
+STATE = {
+    "running": False,
+    "device": None,
+    "progress": 0.0,
+    "device_info": None,
+    "error": None,
+}
 STATE_LOCK = threading.Lock()
-STOP = threading.Event()
 
 
 def get_status():
     with STATE_LOCK:
-        return {
-            "running": STATE["running"],
-            "device": STATE["device"],
-            "progress": STATE["progress"],
-            "device_info": STATE["device_info"]
-        }
+        return dict(STATE)
 
 
-def set_status(running, device=None, progress=None, device_info=None):
+def start_run(device: str):
     with STATE_LOCK:
-        STATE["running"] = running
-        STATE["device"] = device
-        if progress is not None:
-            STATE["progress"] = progress
-        if device_info is not None:
-            STATE["device_info"] = device_info
+        STATE.update(
+            running=True, device=device, progress=0.0, device_info=None, error=None
+        )
+
+
+def finish_run():
+    with STATE_LOCK:
+        STATE["running"] = False
+
+
+def set_progress(percent: float):
+    with STATE_LOCK:
+        STATE["progress"] = round(float(percent), 1)
+
+
+def set_device_info(info: dict):
+    with STATE_LOCK:
+        STATE["device_info"] = info
+
+
+def set_error(message: str):
+    with STATE_LOCK:
+        STATE["error"] = message
+
 
 def log_line(text):
     timestamp = datetime.now().strftime("%H:%M:%S")
