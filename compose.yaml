@@ -5,15 +5,12 @@ services:
       context: .
     container_name: iOSBackup
     restart: always
-    privileged: true
-#    network_mode: host
     volumes:
       - /mnt/HDD/iOS/:/iPhone
       - ./app:/app
     environment:
-      - PORT=3000
       - BASE_URL=/api/ingress/backup
 networks:
   default:
-    name: nginx_default
+    name: nginx-pm_default
     external: true          

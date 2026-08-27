@@ -66,7 +66,7 @@ COPY --from=builder /app/python_libs /usr/local/lib/python3.11/dist-packages/
 RUN ldconfig
 
 WORKDIR /app
-ENV PORT=89
+ENV PORT=80
 
 # Startbefehl
 CMD ["./start.sh"]
