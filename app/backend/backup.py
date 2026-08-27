@@ -1,144 +1,114 @@
 import asyncio
-import os
+import logging
 import plistlib
-import threading
+from collections import deque
+from pathlib import Path
 from pymobiledevice3.lockdown import create_using_tcp
 from pymobiledevice3.services.heartbeat import HeartbeatService
 from pymobiledevice3.services.mobilebackup2 import Mobilebackup2Service
-from backend.config import BACKUP_DIR, log_line, set_progress, set_device_info, set_error, finish_run
-from backend.database import get_device, get_pair_record
+from backend import db
 
-_INFO_KEYS = {"model": "ProductType", "version": "ProductVersion"}
-
-_ACTIVE = {"loop": None, "task": None}
-_LOCK = threading.Lock()
+BACKUP_DIR = Path("/iPhone")
 
 
-def read_backup_info(device_name: str):
-    dev = get_device(device_name)
-    if not dev or not dev.get("uuid"):
+def archive_info(uuid):
+    path = BACKUP_DIR / uuid / "Info.plist"
+    if not path.exists():
         return None
-    info_path = os.path.join(BACKUP_DIR, dev["uuid"], "Info.plist")
-    if not os.path.exists(info_path):
-        return None
-    try:
-        with open(info_path, "rb") as f:
-            info = plistlib.load(f)
-        last_backup = info.get("Last Backup Date")
-        if hasattr(last_backup, "strftime"):
-            last_backup = last_backup.strftime("%d.%m.%Y, %H:%M")
-        elif last_backup:
-            last_backup = str(last_backup)
+    info = plistlib.loads(path.read_bytes())
+    return {
+        "last_backup": info.get("Last Backup Date"),
+        "product_type": info.get("Product Type"),
+        "product_version": info.get("Product Version"),
+    }
+
+
+class Backup:
+    def __init__(self):
+        self.task = None
+        self.device = None
+        self.progress = 0.0
+        self.info = None
+        self.error = None
+        self.messages = deque(maxlen=500)
+        self.subscribers: set[asyncio.Queue] = set()
+
+    @property
+    def running(self):
+        return self.task is not None and not self.task.done()
+
+    def status(self):
         return {
-            "last_backup_date": last_backup,
-            "product_type": info.get("Product Type"),
-            "product_version": info.get("Product Version"),
+            "running": self.running,
+            "device": self.device,
+            "progress": self.progress,
+            "device_info": self.info,
+            "error": self.error,
         }
-    except Exception:
-        return None
 
+    def payload(self, *log):
+        return {"status": self.status(), "log": list(log)}
 
-def stop_backup(reason: str = None):
-    with _LOCK:
-        loop, task = _ACTIVE.get("loop"), _ACTIVE.get("task")
-    if loop is not None and task is not None and not task.done():
-        loop.call_soon_threadsafe(task.cancel)
-    else:
-        finish_run()
-    if reason:
-        log_line(reason)
+    def publish(self, *log):
+        for queue in self.subscribers:
+            queue.put_nowait(self.payload(*log))
 
+    def log(self, message):
+        self.messages.append(message)
+        self.publish(message)
 
-async def _heartbeat(lockdown):
-    try:
+    def start(self, name):
+        self.device, self.progress, self.info, self.error = name, 0.0, None, None
+        self.messages.clear()
+        self.task = asyncio.create_task(self._run(db.get_device(name), db.get_pair_record(name)))
+        self.task.add_done_callback(lambda _: self.publish())
+        self.publish()
+
+    def cancel(self):
+        if self.running:
+            self.task.cancel()
+
+    async def _heartbeat(self, lockdown):
         await HeartbeatService(lockdown).start()
-    except asyncio.CancelledError:
-        raise
-    except Exception as e:
-        log_line(f"Heartbeat beendet: {type(e).__name__}: {e}")
 
+    def _progress(self, percent):
+        value = round(float(percent), 1)
+        if value != self.progress:
+            self.progress = value
+            self.publish()
 
-async def _read_device_info(lockdown):
-    info = {}
-    for label, key in _INFO_KEYS.items():
+    async def _run(self, dev, record):
+        lockdown = heartbeat = None
         try:
-            info[label] = await lockdown.get_value(key=key)
-        except Exception:
-            pass
-    return info
-
-
-async def _run(device_name: str):
-    with _LOCK:
-        _ACTIVE["loop"] = asyncio.get_running_loop()
-        _ACTIVE["task"] = asyncio.current_task()
-
-    dev = get_device(device_name)
-    record = get_pair_record(device_name)
-    if not dev or not dev.get("ip") or not dev.get("uuid"):
-        log_line(f"❌ Geräte-Daten fehlen für '{device_name}' (IP oder UDID)")
-        set_error("Geräte-Daten unvollständig")
-        return
-    if not record:
-        log_line(f"❌ Kein Pair-Record für '{device_name}' hinterlegt")
-        set_error("Pair-Record fehlt")
-        return
-
-    lockdown = None
-    heartbeat = None
-    try:
-        log_line(f"Verbinde mit {dev['ip']} …")
-        lockdown = await create_using_tcp(
-            hostname=dev["ip"],
-            identifier=dev["uuid"],
-            pair_record=record,
-            autopair=False,
-            keep_alive=True,
-        )
-
-        info = await _read_device_info(lockdown)
-        if info:
-            set_device_info(info)
-            log_line(f"Verbunden: {info.get('model', '?')} · iOS {info.get('version', '?')}")
-
-        heartbeat = asyncio.create_task(_heartbeat(lockdown))
-        await asyncio.sleep(3)
-
-        async with Mobilebackup2Service(lockdown) as client:
-            log_line("Backup gestartet")
-            await client.backup(
-                full=False,
-                backup_directory=BACKUP_DIR,
-                progress_callback=set_progress,
+            logging.info("Verbinde mit %s", dev["ip"])
+            lockdown = await create_using_tcp(
+                hostname=dev["ip"], identifier=dev["uuid"], pair_record=record,
+                autopair=False, keep_alive=True,
             )
+            self.info = {
+                "model": await lockdown.get_value(key="ProductType"),
+                "version": await lockdown.get_value(key="ProductVersion"),
+            }
+            self.publish()
+            logging.info("Verbunden: %s · iOS %s", self.info["model"], self.info["version"])
 
-        set_progress(100)
-        log_line("✅ Backup abgeschlossen")
+            heartbeat = asyncio.create_task(self._heartbeat(lockdown))
+            await asyncio.sleep(3)
 
-    except asyncio.CancelledError:
-        log_line("⏹️ Abgebrochen")
-        raise
-    except Exception as e:
-        message = f"{type(e).__name__}: {e}"
-        log_line(f"❌ {message}")
-        set_error(message)
-    finally:
-        if heartbeat is not None:
-            heartbeat.cancel()
-        if lockdown is not None:
-            try:
+            async with Mobilebackup2Service(lockdown) as client:
+                logging.info("Backup gestartet")
+                await client.backup(full=False, backup_directory=BACKUP_DIR,
+                                    progress_callback=self._progress)
+            self.progress = 100.0
+            logging.info("Backup abgeschlossen")
+        except Exception as e:
+            logging.exception("Backup fehlgeschlagen")
+            self.error = str(e)
+        finally:
+            if heartbeat:
+                heartbeat.cancel()
+            if lockdown:
                 await lockdown.close()
-            except Exception:
-                pass
 
 
-def run_backup(device_name: str):
-    try:
-        asyncio.run(_run(device_name))
-    except asyncio.CancelledError:
-        pass
-    finally:
-        with _LOCK:
-            _ACTIVE["loop"] = None
-            _ACTIVE["task"] = None
-        finish_run()
+backup = Backup()

@@ -1,10 +1,9 @@
-FROM python:3.14-slim
+FROM python:3.12-slim
 
 RUN pip install --no-cache-dir \
-	pymobiledevice3 \
-	fastapi[standard]
+	pymobiledevice3
 
 WORKDIR /app
 ENV PORT=80
 
-CMD ["python3", "-m", "backend.main"]
+CMD ["uvicorn", "backend.api:app", "--host", "0.0.0.0"]

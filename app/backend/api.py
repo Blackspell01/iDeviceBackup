@@ -1,154 +1,137 @@
-import json
-import os
 import asyncio
-import threading
-from typing import Optional
+import json
+import logging
+import os
+from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
-from starlette.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from backend.config import (
-    BASE_URL, FRONTEND_DIR, LOG_FILE, get_status,
-    start_run, clear_logs, get_client_ip
-)
-from backend.backup import read_backup_info, stop_backup, run_backup
-from backend.database import (
-    get_device, list_devices, set_device, set_pair_record_raw, delete_device
-)
+from backend import db
+from backend.backup import BACKUP_DIR, archive_info, backup
 
-app = FastAPI(root_path=BASE_URL)
+BASE_URL = os.environ.get("BASE_URL", "")
+FRONTEND = Path("frontend")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
-# --- MODELS ---
-class StartRequest(BaseModel):
-    device: str
+class UiLog(logging.Handler):
+    """Schiebt jede Logzeile — auch die von pymobiledevice3 — in die Oberfläche."""
 
-class UpdatePairRecordRequest(BaseModel):
-    device: str
+    def emit(self, record):
+        backup.log(self.format(record))
+
+
+@asynccontextmanager
+async def lifespan(app):
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(message)s")
+    handler = UiLog()
+    handler.setFormatter(logging.Formatter("%(asctime)s %(message)s", datefmt="%H:%M:%S"))
+    logging.getLogger().addHandler(handler)
+    db.init()
+    yield
+    backup.cancel()
+
+
+app = FastAPI(title="iOS Backup", root_path=BASE_URL, lifespan=lifespan)
+
+
+class Name(BaseModel):
+    name: str
+
+
+class Patch(BaseModel):
+    name: str | None = None
+    ip: str | None = None
+    uuid: str | None = None
+
+
+class PairRecord(BaseModel):
     content: str
-    uuid: Optional[str] = None
-    ip: Optional[str] = None
-
-class DeviceRequest(BaseModel):
-    device: str
-    newName: Optional[str] = None
-    new_name: Optional[str] = None
-    ip: Optional[str] = None
-    uuid: Optional[str] = None
-
-class DeleteDeviceRequest(BaseModel):
-    device: str
-
-# --- ROUTES ---
-
-@app.get("/", response_class=HTMLResponse)
-@app.get("/index.html", response_class=HTMLResponse)
-def serve_index():
-    with open(os.path.join(FRONTEND_DIR, "index.html"), "r") as f:
-        html = f.read()
-    html = html.replace("</head>", f'<script>window.BASE_URL = "{BASE_URL}";</script></head>', 1)
-    if BASE_URL:
-        html = html.replace('href="styles.css"', f'href="{BASE_URL}/styles.css"')
-        html = html.replace('src="app.js"', f'src="{BASE_URL}/app.js"')
-    return HTMLResponse(content=html)
-
-@app.get("/api/status")
-def api_status():
-    return get_status()
 
 
-@app.get("/api/my-ip")
-def api_my_ip(request: Request):
-    return {"ip": get_client_ip(request.headers, request.client)}
+@app.get("/", response_class=HTMLResponse, include_in_schema=False)
+async def index():
+    html = (FRONTEND / "index.html").read_text()
+    return html.replace("<head>", f'<head><base href="{BASE_URL}/">', 1)
 
-@app.get("/api/backup-info")
-def api_backup_info(device: Optional[str] = None):
-    return {"info": read_backup_info(device) if device else None}
 
 @app.get("/api/devices")
-def api_devices(device: Optional[str] = None):
-    if device:
-        dev = get_device(device)
-        if not dev: raise HTTPException(status_code=404)
-        return {device: {"ip": dev.get("ip"), "pair_record": dev.get("uuid")}}
-    return list_devices()
+async def devices():
+    return db.list_devices()
 
-@app.get("/api/logs")
-def api_logs():
-    with open(LOG_FILE, "r") as f:
-        return {"logs": "".join(f.readlines()[-200:])}
 
-@app.get("/api/stream")
-async def api_stream(request: Request):
-    async def event_generator():
-        with open(LOG_FILE, "r") as f:
-            yield f"data: {json.dumps({'logs': ''.join(f.readlines()[-200:])})}\n\n"
-        last_size = os.path.getsize(LOG_FILE)
-        try:
-            while True:
-                if await request.is_disconnected():
-                    break
-                curr_size = os.path.getsize(LOG_FILE)
-                if curr_size > last_size:
-                    with open(LOG_FILE, "r") as f:
-                        f.seek(last_size)
-                        content = f.read()
-                    if content:
-                        yield f"data: {json.dumps({'logs': content})}\n\n"
-                    last_size = curr_size
-                if not get_status()["running"]:
-                    yield 'data: {"done": true}\n\n'
-                    break
-                await asyncio.sleep(0.5)
-        except Exception:
-            pass
+@app.post("/api/devices", status_code=201)
+async def create(body: Name):
+    db.create_device(body.name)
+    return db.get_device(body.name)
 
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
+
+@app.patch("/api/devices/{name}")
+async def patch(name: str, body: Patch):
+    db.update_device(name, body.name, body.ip, body.uuid)
+    if body.uuid:
+        (BACKUP_DIR / body.uuid).mkdir(parents=True, exist_ok=True)
+    return db.get_device(body.name or name)
+
+
+@app.delete("/api/devices/{name}", status_code=204)
+async def remove(name: str):
+    db.delete_device(name)
+
+
+@app.put("/api/devices/{name}/pair-record", status_code=204)
+async def pair_record(name: str, body: PairRecord):
+    db.set_pair_record(name, body.content.encode())
+
+
+@app.get("/api/devices/{name}/archive")
+async def archive(name: str):
+    dev = db.get_device(name)
+    return archive_info(dev["uuid"]) if dev and dev["uuid"] else None
+
+
+@app.get("/api/status")
+async def status():
+    return backup.status()
+
 
 @app.post("/api/start")
-def api_start(request: StartRequest):
-    clear_logs()
-    start_run(request.device)
-    threading.Thread(target=run_backup, args=(request.device,), daemon=True).start()
-    return {"success": True}
+async def start(body: Name):
+    if not backup.running:
+        backup.start(body.name)
+    return backup.status()
+
 
 @app.post("/api/stop")
-def api_stop():
-    stop_backup("⏹️ Manuell gestoppt")
-    return {"success": True}
+async def stop():
+    backup.cancel()
+    return backup.status()
 
-@app.post("/api/update-pair-record")
-def api_update_pair_record(req: UpdatePairRecordRequest):
-    uuid = req.uuid or (get_device(req.device) or {}).get("uuid")
-    if not uuid: raise HTTPException(status_code=400)
-    set_device(req.device, ip=req.ip, uuid=uuid)
-    set_pair_record_raw(req.device, req.content)
-    return {"success": True}
 
-@app.post("/api/devices")
-def api_devices_post(req: DeviceRequest):
-    name = req.newName or req.new_name or req.device
-    set_device(name, ip=req.ip, uuid=req.uuid)
-    return {"success": True, "device": name}
+@app.get("/api/client-ip")
+async def client_ip(request: Request):
+    forwarded = request.headers.get("X-Forwarded-For", "")
+    return {"ip": forwarded.split(",")[0].strip() or request.client.host}
 
-@app.post("/api/devices/delete")
-def api_devices_delete(req: DeleteDeviceRequest):
-    delete_device(req.device)
-    return {"success": True}
+
+@app.get("/api/events")
+async def events():
+    queue = asyncio.Queue()
+    backup.subscribers.add(queue)
+
+    async def stream():
+        try:
+            yield f"data: {json.dumps(backup.payload(*backup.messages))}\n\n"
+            while True:
+                yield f"data: {json.dumps(await queue.get())}\n\n"
+        finally:
+            backup.subscribers.discard(queue)
+
+    return StreamingResponse(stream(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+app.mount("/", StaticFiles(directory=FRONTEND), name="static")
