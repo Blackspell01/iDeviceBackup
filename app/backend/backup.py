@@ -31,7 +31,7 @@ async def validate_pairing(dev, record):
             lockdown = await create_using_tcp(
                 hostname=dev["ip"], identifier=dev["uuid"], pair_record=record, autopair=False,
             )
-            valid = await lockdown.validate_pairing()
+            valid = lockdown.paired
     except Exception as e:
         return {"error": str(e) or "Gerät nicht erreichbar"}
     finally:
@@ -120,7 +120,7 @@ class Backup:
             logging.info("Backup abgeschlossen")
         except Exception as e:
             logging.exception("Backup fehlgeschlagen")
-            self.error = str(e)
+            self.error = str(e) or type(e).__name__
         finally:
             if heartbeat:
                 heartbeat.cancel()
