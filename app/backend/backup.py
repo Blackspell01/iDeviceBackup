@@ -11,8 +11,8 @@ from backend import db
 BACKUP_DIR = Path("/iPhone")
 
 
-def archive_info(uuid):
-    path = BACKUP_DIR / uuid / "Info.plist"
+def archive_info(name, uuid):
+    path = BACKUP_DIR / name / uuid / "Info.plist"
     if not path.exists():
         return None
     info = plistlib.loads(path.read_bytes())
@@ -97,7 +97,7 @@ class Backup:
 
             async with Mobilebackup2Service(lockdown) as client:
                 logging.info("Backup gestartet")
-                await client.backup(full=False, backup_directory=BACKUP_DIR,
+                await client.backup(full=False, backup_directory=BACKUP_DIR / dev["name"],
                                     progress_callback=self._progress)
             self.progress = 100.0
             logging.info("Backup abgeschlossen")

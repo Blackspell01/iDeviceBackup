@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from backend import db, logs
-from backend.backup import BACKUP_DIR, archive_info, backup
+from backend.backup import archive_info, backup
 
 BASE_URL = os.environ.get("BASE_URL", "")
 FRONTEND = Path("frontend")
@@ -61,8 +61,6 @@ async def create(body: Name):
 @app.patch("/api/devices/{name}")
 async def patch(name: str, body: Patch):
     db.update_device(name, body.name, body.ip, body.uuid)
-    if body.uuid:
-        (BACKUP_DIR / body.uuid).mkdir(parents=True, exist_ok=True)
     return db.get_device(body.name or name)
 
 
@@ -79,7 +77,7 @@ async def pair_record(name: str, body: PairRecord):
 @app.get("/api/devices/{name}/archive")
 async def archive(name: str):
     dev = db.get_device(name)
-    return archive_info(dev["uuid"]) if dev and dev["uuid"] else None
+    return archive_info(dev["name"], dev["uuid"]) if dev and dev["uuid"] else None
 
 
 @app.get("/api/status")
