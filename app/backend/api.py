@@ -1,6 +1,5 @@
 import asyncio
 import json
-import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -10,26 +9,16 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from backend import db
+from backend import db, logs
 from backend.backup import BACKUP_DIR, archive_info, backup
 
 BASE_URL = os.environ.get("BASE_URL", "")
 FRONTEND = Path("frontend")
 
 
-class UiLog(logging.Handler):
-    """Schiebt jede Logzeile — auch die von pymobiledevice3 — in die Oberfläche."""
-
-    def emit(self, record):
-        backup.log(self.format(record))
-
-
 @asynccontextmanager
 async def lifespan(app):
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)-7s %(message)s")
-    handler = UiLog()
-    handler.setFormatter(logging.Formatter("%(asctime)s %(message)s", datefmt="%H:%M:%S"))
-    logging.getLogger().addHandler(handler)
+    logs.setup()
     db.init()
     yield
     backup.cancel()
@@ -124,9 +113,9 @@ async def events():
 
     async def stream():
         try:
-            yield f"data: {json.dumps(backup.payload(*backup.messages))}\n\n"
+            yield f"event: init\ndata: {json.dumps(backup.payload(*backup.messages))}\n\n"
             while True:
-                yield f"data: {json.dumps(await queue.get())}\n\n"
+                yield f"event: update\ndata: {json.dumps(await queue.get())}\n\n"
         finally:
             backup.subscribers.discard(queue)
 

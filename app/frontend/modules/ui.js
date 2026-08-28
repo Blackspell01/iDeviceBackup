@@ -21,11 +21,8 @@ export const btnStop = $('btn-stop');
 export const btnDelete = $('btn-delete-device');
 export const btnClipboard = $('btn-clipboard');
 
-export function appendLog(lines) {
-  if (!lines.length) return;
-  const text = lines.join('\n');
-  logs.textContent = logs.dataset.filled ? `${logs.textContent}\n${text}` : text;
-  logs.dataset.filled = '1';
+export function renderLog(lines) {
+  logs.textContent = lines.join('\n');
   logs.scrollTop = logs.scrollHeight;
 }
 

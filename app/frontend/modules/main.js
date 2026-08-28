@@ -18,13 +18,25 @@ async function select(name) {
   ui.renderArchive(await api.archiveInfo(name));
 }
 
+let lines = [];
+
 function connect() {
   const source = new EventSource('api/events');
-  source.onmessage = (event) => {
+
+  source.addEventListener('init', (event) => {
     const { status, log } = JSON.parse(event.data);
-    ui.appendLog(log);
+    lines = log;
+    ui.renderLog(lines);
     ui.renderStatus(status, selected);
-  };
+  });
+
+  source.addEventListener('update', (event) => {
+    const { status, log } = JSON.parse(event.data);
+    lines.push(...log);
+    ui.renderLog(lines);
+    ui.renderStatus(status, selected);
+  });
+
   source.onerror = () => {
     source.close();
     setTimeout(connect, 2000);
