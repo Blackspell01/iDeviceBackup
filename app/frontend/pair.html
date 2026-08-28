@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pairing Record</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <h1 id="pair-message"></h1>
+
+    <script type="module">
+        import * as api from './modules/api.js';
+
+        const params = new URLSearchParams(location.hash.slice(1));
+        const device = params.get('pair');
+
+        try {
+            let base64 = params.get('data').replace(/-/g, '+').replace(/_/g, '/');
+            while (base64.length % 4) base64 += '=';
+            const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
+            await api.updateDevice(device, { uuid: params.get('uuid') });
+            await api.setPairRecord(device, new TextDecoder().decode(bytes));
+            new BroadcastChannel('pairing').postMessage(device);
+            window.close();
+        } catch (error) {
+            document.getElementById('pair-message').textContent = `❌ ${error.message}`;
+        }
+    </script>
+</body>
+</html>

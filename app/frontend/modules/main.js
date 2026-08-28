@@ -81,29 +81,27 @@ ui.btnDelete.addEventListener('click', async (event) => {
   ui.clearDevice();
 });
 
-ui.btnClipboard.addEventListener('click', async () => {
-  if (!selected) return ui.setClipboardMessage('Bitte zuerst ein Gerät auswählen.');
-  if (!navigator.clipboard?.readText) return ui.setClipboardMessage('Clipboard-Zugriff nur über HTTPS.');
-  try {
-    const content = await navigator.clipboard.readText();
-    if (!content.trim()) throw new Error('Clipboard ist leer');
-    await api.setPairRecord(selected, content);
-    ui.setClipboardMessage('✅ Pairing Record aktualisiert.');
-    await reload();
-  } catch (error) {
-    ui.setClipboardMessage(`Fehler: ${error.message}`);
-  }
+ui.btnCreate.addEventListener('click', () => {
+  if (!selected) return ui.setMessage('Bitte zuerst ein Gerät auswählen.');
+  const input = encodeURIComponent(`${document.baseURI}|${selected}`);
+  window.location.href = `shortcuts://run-shortcut?name=PairingRecord&input=text&text=${input}`;
+});
+
+new BroadcastChannel('pairing').addEventListener('message', async (event) => {
+  await reload();
+  await select(event.data);
+  ui.setMessage('✅ Pairing Record erzeugt.');
 });
 
 ui.btnValidate.addEventListener('click', async () => {
-  if (!selected) return ui.setClipboardMessage('Bitte zuerst ein Gerät auswählen.');
+  if (!selected) return ui.setMessage('Bitte zuerst ein Gerät auswählen.');
   ui.btnValidate.disabled = true;
-  ui.setClipboardMessage('Prüfe Pairing…');
+  ui.setMessage('Prüfe Pairing…');
   try {
     const { error } = await api.validatePairRecord(selected);
-    ui.setClipboardMessage(error ? `❌ ${error}` : '✅ Pairing ist gültig.');
+    ui.setMessage(error ? `❌ ${error}` : '✅ Pairing ist gültig.');
   } catch (error) {
-    ui.setClipboardMessage(`Fehler: ${error.message}`);
+    ui.setMessage(`Fehler: ${error.message}`);
   } finally {
     ui.btnValidate.disabled = false;
   }

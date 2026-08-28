@@ -10,7 +10,7 @@ const deviceInfo = $('device-info');
 const lastBackupDate = $('last-backup-date');
 const productType = $('product-type');
 const productVersion = $('product-version');
-const clipboardMessage = $('clipboard-message');
+const pairMessage = $('pair-message');
 
 export const deviceSelect = $('device-select');
 export const deviceName = $('device-name');
@@ -19,8 +19,8 @@ export const deviceUUID = $('device-uuid');
 export const btnStart = $('btn-start');
 export const btnStop = $('btn-stop');
 export const btnDelete = $('btn-delete-device');
-export const btnClipboard = $('btn-clipboard');
 export const btnValidate = $('btn-validate');
+export const btnCreate = $('btn-create');
 
 export function renderLog(lines) {
   logs.textContent = lines.join('\n');
@@ -76,8 +76,8 @@ export function clearDevice() {
   btnStart.disabled = true;
 }
 
-export function setClipboardMessage(text) {
-  clipboardMessage.textContent = text;
+export function setMessage(text) {
+  pairMessage.textContent = text;
 }
 
 export function inlineEdit(span, commit) {
