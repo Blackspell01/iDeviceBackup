@@ -38,9 +38,9 @@
                     <details class="pair-record-details">
                         <summary style="display:flex; align-items:center; gap:10px;">
                             <span>🔑 Pairing Record aktualisieren</span>
-                            <button id="btn-delete-device" class="link-btn" title="Gerät löschen" style="margin-left:auto; background:none; border:none; color:#888; padding:0; font-size:14px; cursor:pointer;">🗑️</button>
+                            <button id="btn-delete-device" class="link-btn" title="Gerät löschen">🗑️</button>
                         </summary>
-                        <div class="pair-actions" style="margin-top:10px; padding-left:22px;">
+                        <div class="pair-actions">
                             <button id="btn-clipboard" class="btn-clipboard">Inhalt aus Clipboard einfügen</button>
                             <div id="clipboard-message"></div>
                         </div>
@@ -56,7 +56,7 @@
 
         <div class="logs-section">
             <h2 id="progress-title">📋 Fortschritt</h2>
-            <div id="device-info-display" class="hidden" style="margin-bottom: 15px; color: #666; font-size: 0.9em;"></div>
+            <div id="device-info-display" class="hidden" style="margin-bottom: 15px; color: var(--text); font-size: 0.9em;"></div>
             
             <div class="progress-bar">
                 <div id="progress-fill" class="progress-fill" style="width: 0%;"></div>
