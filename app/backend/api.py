@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from backend import db, logs
-from backend.backup import archive_info, backup
+from backend.backup import archive_info, backup, validate_pairing
 
 BASE_URL = os.environ.get("BASE_URL", "")
 FRONTEND = Path("frontend")
@@ -78,6 +78,11 @@ async def pair_record(name: str, body: PairRecord):
 async def archive(name: str):
     dev = db.get_device(name)
     return archive_info(dev["name"], dev["uuid"]) if dev and dev["uuid"] else None
+
+
+@app.get("/api/devices/{name}/pair-record/validate")
+async def check_pair_record(name: str):
+    return await validate_pairing(db.get_device(name), db.get_pair_record(name))
 
 
 @app.get("/api/status")

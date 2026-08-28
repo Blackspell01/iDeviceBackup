@@ -20,6 +20,7 @@ export const btnStart = $('btn-start');
 export const btnStop = $('btn-stop');
 export const btnDelete = $('btn-delete-device');
 export const btnClipboard = $('btn-clipboard');
+export const btnValidate = $('btn-validate');
 
 export function renderLog(lines) {
   logs.textContent = lines.join('\n');

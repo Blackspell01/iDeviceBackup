@@ -16,6 +16,7 @@ export const updateDevice = (name, patch) => request(device(name), 'PATCH', patc
 export const deleteDevice = (name) => request(device(name), 'DELETE');
 export const setPairRecord = (name, content) => request(device(name, '/pair-record'), 'PUT', { content });
 export const archiveInfo = (name) => request(device(name, '/archive'));
+export const validatePairRecord = (name) => request(device(name, '/pair-record/validate'));
 export const clientIp = () => request('api/client-ip');
 export const startBackup = (name) => request('api/start', 'POST', { name });
 export const stopBackup = () => request('api/stop', 'POST');

@@ -95,6 +95,20 @@ ui.btnClipboard.addEventListener('click', async () => {
   }
 });
 
+ui.btnValidate.addEventListener('click', async () => {
+  if (!selected) return ui.setClipboardMessage('Bitte zuerst ein Gerät auswählen.');
+  ui.btnValidate.disabled = true;
+  ui.setClipboardMessage('Prüfe Pairing…');
+  try {
+    const { error } = await api.validatePairRecord(selected);
+    ui.setClipboardMessage(error ? `❌ ${error}` : '✅ Pairing ist gültig.');
+  } catch (error) {
+    ui.setClipboardMessage(`Fehler: ${error.message}`);
+  } finally {
+    ui.btnValidate.disabled = false;
+  }
+});
+
 ui.btnStart.addEventListener('click', async () => {
   ui.btnStart.disabled = true;
   ui.renderStatus(await api.startBackup(selected), selected);

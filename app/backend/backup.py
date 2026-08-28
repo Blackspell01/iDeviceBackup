@@ -23,6 +23,23 @@ def archive_info(name, uuid):
     }
 
 
+async def validate_pairing(dev, record):
+    """Prüft, ob das Gerät den gespeicherten Pairing Record noch akzeptiert."""
+    lockdown = None
+    try:
+        async with asyncio.timeout(15):
+            lockdown = await create_using_tcp(
+                hostname=dev["ip"], identifier=dev["uuid"], pair_record=record, autopair=False,
+            )
+            valid = await lockdown.validate_pairing()
+    except Exception as e:
+        return {"error": str(e) or "Gerät nicht erreichbar"}
+    finally:
+        if lockdown:
+            await lockdown.close()
+    return {"error": None if valid else "Record wird vom Gerät abgelehnt"}
+
+
 class Backup:
     def __init__(self):
         self.task = None
