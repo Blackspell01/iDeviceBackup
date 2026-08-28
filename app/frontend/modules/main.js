@@ -87,6 +87,10 @@ ui.btnCreate.addEventListener('click', () => {
   window.location.href = `shortcuts://run-shortcut?name=PairingRecord&input=text&text=${input}`;
 });
 
+document.getElementById('btn-install-shortcut').addEventListener('click', () => {
+  window.location.href = new URL('PairingRecord.shortcut', document.baseURI).href;
+});
+
 new BroadcastChannel('pairing').addEventListener('message', async (event) => {
   await reload();
   await select(event.data);
