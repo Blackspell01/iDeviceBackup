@@ -1,5 +1,6 @@
 import asyncio
 import json
+import mimetypes
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -126,4 +127,5 @@ async def events():
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
+mimetypes.add_type("application/octet-stream", ".shortcut")
 app.mount("/", StaticFiles(directory=FRONTEND), name="static")

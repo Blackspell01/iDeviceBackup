@@ -1,0 +1,20 @@
+services:
+  ios-backup:
+    image: ios-backup:1.0
+    build:
+      context: .
+    container_name: iOSBackup
+    restart: always
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    volumes:
+      - /mnt/HDD/iOS/:/iPhone
+      - ./app:/app
+    environment:
+      - BASE_URL=/api/ingress/backup
+networks:
+  default:
+    name: nginx-pm_default
+    external: true
