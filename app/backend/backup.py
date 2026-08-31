@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import plistlib
+import logging
 from collections import deque
 from pathlib import Path
 from pymobiledevice3.lockdown import create_using_tcp
@@ -9,6 +10,15 @@ from pymobiledevice3.services.mobilebackup2 import Mobilebackup2Service
 from backend import db
 
 BACKUP_DIR = Path("/iPhone")
+
+class UiLog(logging.Handler):
+    def emit(self, record):
+        backup.log(self.format(record))
+
+    @classmethod
+    def setup(cls):
+        logging.basicConfig(level=logging.INFO)
+        logging.getLogger().addHandler(cls())
 
 
 def archive_info(name, uuid):

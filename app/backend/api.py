@@ -9,8 +9,8 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from backend import db, logs
-from backend.backup import archive_info, backup, validate_pairing
+from backend import db
+from backend.backup import archive_info, backup, validate_pairing, UiLog
 
 BASE_URL = os.environ.get("BASE_URL", "")
 FRONTEND = Path("frontend")
@@ -18,7 +18,7 @@ FRONTEND = Path("frontend")
 
 @asynccontextmanager
 async def lifespan(app):
-    logs.setup()
+    UiLog.setup()
     db.init()
     yield
     backup.cancel()
