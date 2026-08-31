@@ -1,11 +1,12 @@
 import asyncio
 import logging
 import plistlib
-import logging
 from collections import deque
 from pathlib import Path
-from pymobiledevice3.lockdown import create_using_tcp
-from pymobiledevice3.services.heartbeat import HeartbeatService
+from pymobiledevice3.pair_records import PAIRING_RECORD_EXT, create_pairing_records_cache_folder, get_remote_pairing_record_filename
+from pymobiledevice3.remote.common import TunnelProtocol
+from pymobiledevice3.remote.remote_service_discovery import RemoteServiceDiscoveryService
+from pymobiledevice3.remote.tunnel_service import create_core_device_tunnel_service_using_remotepairing, start_tunnel_over_remotepairing
 from pymobiledevice3.services.mobilebackup2 import Mobilebackup2Service
 from backend import db
 
@@ -33,21 +34,27 @@ def archive_info(name, uuid):
     }
 
 
+async def connect(dev, record):
+    """Öffnet den RemotePairing Kanal. Der Record wird abgelegt, wo pymobiledevice3 ihn sucht."""
+    path = create_pairing_records_cache_folder() / (
+        f"{get_remote_pairing_record_filename(dev['uuid'])}.{PAIRING_RECORD_EXT}"
+    )
+    path.write_bytes(plistlib.dumps(record))
+    return await create_core_device_tunnel_service_using_remotepairing(
+        remote_identifier=dev["uuid"], hostname=dev["ip"], port=49152, autopair=False,
+    )
+
+
 async def validate_pairing(dev, record):
     """Prüft, ob das Gerät den gespeicherten Pairing Record noch akzeptiert."""
-    lockdown = None
+    service = None
     try:
         async with asyncio.timeout(15):
-            lockdown = await create_using_tcp(
-                hostname=dev["ip"], identifier=dev["uuid"], pair_record=record, autopair=False,
-            )
-            valid = lockdown.paired
-    except Exception as e:
-        return {"error": str(e) or "Gerät nicht erreichbar"}
+            service = await connect(dev, record)
     finally:
-        if lockdown:
-            await lockdown.close()
-    return {"error": None if valid else "Record wird vom Gerät abgelehnt"}
+        if service:
+            await service.close()
+    return {"error": None}
 
 
 class Backup:
@@ -95,9 +102,6 @@ class Backup:
         if self.running:
             self.task.cancel()
 
-    async def _heartbeat(self, lockdown):
-        await HeartbeatService(lockdown).start()
-
     def _progress(self, percent):
         value = round(float(percent), 1)
         if value != self.progress:
@@ -105,37 +109,24 @@ class Backup:
             self.publish()
 
     async def _run(self, dev, record):
-        lockdown = heartbeat = None
         try:
             logging.info("Verbinde mit %s", dev["ip"])
-            lockdown = await create_using_tcp(
-                hostname=dev["ip"], identifier=dev["uuid"], pair_record=record,
-                autopair=False, keep_alive=True,
-            )
-            self.info = {
-                "model": await lockdown.get_value(key="ProductType"),
-                "version": await lockdown.get_value(key="ProductVersion"),
-            }
-            self.publish()
-            logging.info("Verbunden: %s · iOS %s", self.info["model"], self.info["version"])
+            service = await connect(dev, record)
+            async with start_tunnel_over_remotepairing(service, protocol=TunnelProtocol.TCP) as tunnel:
+                async with RemoteServiceDiscoveryService((tunnel.address, tunnel.port)) as rsd:
+                    self.info = {"model": rsd.product_type, "version": rsd.product_version}
+                    self.publish()
+                    logging.info("Verbunden: %s · iOS %s", self.info["model"], self.info["version"])
 
-            heartbeat = asyncio.create_task(self._heartbeat(lockdown))
-            await asyncio.sleep(3)
-
-            async with Mobilebackup2Service(lockdown) as client:
-                logging.info("Backup gestartet")
-                await client.backup(full=False, backup_directory=BACKUP_DIR / dev["name"],
-                                    progress_callback=self._progress)
+                    async with Mobilebackup2Service(rsd) as client:
+                        logging.info("Backup gestartet")
+                        await client.backup(full=False, backup_directory=BACKUP_DIR / dev["name"],
+                                            progress_callback=self._progress)
             self.progress = 100.0
             logging.info("Backup abgeschlossen")
         except Exception as e:
             logging.exception("Backup fehlgeschlagen")
             self.error = str(e) or type(e).__name__
-        finally:
-            if heartbeat:
-                heartbeat.cancel()
-            if lockdown:
-                await lockdown.close()
 
 
 backup = Backup()
