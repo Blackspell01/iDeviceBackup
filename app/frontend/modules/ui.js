@@ -50,7 +50,7 @@ export function renderStatus(status, selected) {
 export function renderOptions(devices, selected) {
   deviceSelect.replaceChildren();
   deviceSelect.add(new Option('-- Bitte wählen --', ''));
-  for (const device of devices) deviceSelect.add(new Option(device.name, device.name));
+  for (const device of devices) deviceSelect.add(new Option(device.name, device.id));
   deviceSelect.add(new Option('＋ Gerät hinzufügen…', '__add__'));
   deviceSelect.value = selected ?? '';
 }

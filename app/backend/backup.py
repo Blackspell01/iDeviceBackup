@@ -51,6 +51,8 @@ async def validate_pairing(dev, record):
     try:
         async with asyncio.timeout(15):
             service = await connect(dev, record)
+    except Exception as e:
+        return {"error": str(e)}
     finally:
         if service:
             await service.close()
@@ -91,10 +93,11 @@ class Backup:
         self.messages.append(message)
         self.publish(message)
 
-    def start(self, name):
-        self.device, self.progress, self.info, self.error = name, 0.0, None, None
+    def start(self, device_id):
+        dev = db.get_device(device_id)
+        self.device, self.progress, self.info, self.error = dev["name"], 0.0, None, None
         self.messages.clear()
-        self.task = asyncio.create_task(self._run(db.get_device(name), db.get_pair_record(name)))
+        self.task = asyncio.create_task(self._run(dev, db.get_pair_record(device_id)))
         self.task.add_done_callback(lambda _: self.publish())
         self.publish()
 

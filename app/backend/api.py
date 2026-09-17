@@ -32,6 +32,10 @@ class Name(BaseModel):
     name: str
 
 
+class Id(BaseModel):
+    id: int
+
+
 class Patch(BaseModel):
     name: str | None = None
     ip: str | None = None
@@ -55,35 +59,34 @@ async def devices():
 
 @app.post("/api/devices", status_code=201)
 async def create(body: Name):
-    db.create_device(body.name)
-    return db.get_device(body.name)
+    return db.get_device(db.create_device(body.name))
 
 
-@app.patch("/api/devices/{name}")
-async def patch(name: str, body: Patch):
-    db.update_device(name, body.name, body.ip, body.uuid)
-    return db.get_device(body.name or name)
+@app.patch("/api/devices/{device_id}")
+async def patch(device_id: int, body: Patch):
+    db.update_device(device_id, body.name, body.ip, body.uuid)
+    return db.get_device(device_id)
 
 
-@app.delete("/api/devices/{name}", status_code=204)
-async def remove(name: str):
-    db.delete_device(name)
+@app.delete("/api/devices/{device_id}", status_code=204)
+async def remove(device_id: int):
+    db.delete_device(device_id)
 
 
-@app.put("/api/devices/{name}/pair-record", status_code=204)
-async def pair_record(name: str, body: PairRecord):
-    db.set_pair_record(name, body.content.encode())
+@app.put("/api/devices/{device_id}/pair-record", status_code=204)
+async def pair_record(device_id: int, body: PairRecord):
+    db.set_pair_record(device_id, body.content.encode())
 
 
-@app.get("/api/devices/{name}/archive")
-async def archive(name: str):
-    dev = db.get_device(name)
+@app.get("/api/devices/{device_id}/archive")
+async def archive(device_id: int):
+    dev = db.get_device(device_id)
     return archive_info(dev["name"], dev["uuid"]) if dev and dev["uuid"] else None
 
 
-@app.get("/api/devices/{name}/pair-record/validate")
-async def check_pair_record(name: str):
-    return await validate_pairing(db.get_device(name), db.get_pair_record(name))
+@app.get("/api/devices/{device_id}/pair-record/validate")
+async def check_pair_record(device_id: int):
+    return await validate_pairing(db.get_device(device_id), db.get_pair_record(device_id))
 
 
 @app.get("/api/status")
@@ -92,9 +95,9 @@ async def status():
 
 
 @app.post("/api/start")
-async def start(body: Name):
+async def start(body: Id):
     if not backup.running:
-        backup.start(body.name)
+        backup.start(body.id)
     return backup.status()
 
 

@@ -13,7 +13,7 @@
         import * as api from './modules/api.js';
 
         const params = new URLSearchParams(location.hash.slice(1));
-        const device = params.get('pair');
+        const device = Number(params.get('pair'));
 
         try {
             let base64 = params.get('data').replace(/-/g, '+').replace(/_/g, '/');

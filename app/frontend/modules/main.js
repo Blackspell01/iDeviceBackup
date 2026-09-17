@@ -4,18 +4,18 @@ import * as ui from './ui.js';
 let devices = [];
 let selected = null;
 
-const find = (name) => devices.find((device) => device.name === name);
+const find = (id) => devices.find((device) => device.id === id);
 
 async function reload() {
   devices = await api.listDevices();
   ui.renderOptions(devices, selected);
 }
 
-async function select(name) {
-  selected = name;
-  ui.deviceSelect.value = name;
-  ui.renderDevice(find(name));
-  ui.renderArchive(await api.archiveInfo(name));
+async function select(id) {
+  selected = id;
+  ui.deviceSelect.value = id;
+  ui.renderDevice(find(id));
+  ui.renderArchive(await api.archiveInfo(id));
 }
 
 let lines = [];
@@ -47,10 +47,10 @@ ui.deviceSelect.addEventListener('change', async (event) => {
   const value = event.target.value;
   if (value === '__add__') {
     let name = 'Neues Gerät';
-    for (let i = 2; find(name); i++) name = `Neues Gerät ${i}`;
+    for (let i = 2; devices.some((device) => device.name === name); i++) name = `Neues Gerät ${i}`;
     const created = await api.createDevice(name);
     await reload();
-    await select(created.name);
+    await select(created.id);
     return;
   }
   if (!value) {
@@ -58,12 +58,11 @@ ui.deviceSelect.addEventListener('change', async (event) => {
     ui.clearDevice();
     return;
   }
-  await select(value);
+  await select(Number(value));
 });
 
 const edit = (span, field) => ui.inlineEdit(span, async (value) => {
   await api.updateDevice(selected, { [field]: value });
-  if (field === 'name') selected = value;
   await reload();
   await select(selected);
 });
@@ -74,7 +73,7 @@ ui.deviceUUID.addEventListener('click', () => edit(ui.deviceUUID, 'uuid'));
 
 ui.btnDelete.addEventListener('click', async (event) => {
   event.stopPropagation();
-  if (!selected || !confirm(`Gerät "${selected}" wirklich löschen?`)) return;
+  if (!selected || !confirm(`Gerät "${find(selected).name}" wirklich löschen?`)) return;
   await api.deleteDevice(selected);
   selected = null;
   await reload();
@@ -93,7 +92,7 @@ document.getElementById('btn-install-shortcut').addEventListener('click', () => 
 
 new BroadcastChannel('pairing').addEventListener('message', async (event) => {
   await reload();
-  await select(event.data);
+  await select(Number(event.data));
   ui.setMessage('✅ Pairing Record erzeugt.');
 });
 
@@ -124,5 +123,5 @@ ui.btnStop.addEventListener('click', async () => {
 await reload();
 const { ip } = await api.clientIp();
 const detected = devices.find((device) => device.ip === ip);
-if (detected) await select(detected.name);
+if (detected) await select(detected.id);
 connect();

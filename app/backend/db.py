@@ -14,13 +14,14 @@ def connect():
 def init():
     with connect() as c:
         c.execute(
-            "CREATE TABLE IF NOT EXISTS pair_records ("
-            "name TEXT PRIMARY KEY, ip TEXT, uuid TEXT, key BLOB)"
+            "CREATE TABLE IF NOT EXISTS devices ("
+            "id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, ip TEXT, uuid TEXT, key BLOB)"
         )
 
 
 def _device(row):
     return {
+        "id": row["id"],
         "name": row["name"],
         "ip": row["ip"],
         "uuid": row["uuid"],
@@ -31,31 +32,31 @@ def _device(row):
 def list_devices():
     with connect() as c:
         rows = c.execute(
-            "SELECT name, ip, uuid, key IS NOT NULL AS paired "
-            "FROM pair_records ORDER BY name"
+            "SELECT id, name, ip, uuid, key IS NOT NULL AS paired "
+            "FROM devices ORDER BY name"
         ).fetchall()
     return [_device(r) for r in rows]
 
 
-def get_device(name):
+def get_device(device_id):
     with connect() as c:
         row = c.execute(
-            "SELECT name, ip, uuid, key IS NOT NULL AS paired "
-            "FROM pair_records WHERE name=?", (name,)
+            "SELECT id, name, ip, uuid, key IS NOT NULL AS paired "
+            "FROM devices WHERE id=?", (device_id,)
         ).fetchone()
     return _device(row) if row else None
 
 
 def create_device(name):
     with connect() as c:
-        c.execute("INSERT INTO pair_records(name) VALUES(?)", (name,))
+        return c.execute("INSERT INTO devices(name) VALUES(?)", (name,)).lastrowid
 
 
-def update_device(name, new_name=None, ip=None, uuid=None):
+def update_device(device_id, name=None, ip=None, uuid=None):
     sets, args = [], []
-    if new_name:
+    if name:
         sets.append("name=?")
-        args.append(new_name)
+        args.append(name)
     if ip is not None:
         sets.append("ip=?")
         args.append(ip)
@@ -64,24 +65,24 @@ def update_device(name, new_name=None, ip=None, uuid=None):
         args.append(uuid)
     if not sets:
         return
-    args.append(name)
+    args.append(device_id)
     with connect() as c:
-        c.execute(f"UPDATE pair_records SET {', '.join(sets)} WHERE name=?", args)
+        c.execute(f"UPDATE devices SET {', '.join(sets)} WHERE id=?", args)
 
 
-def delete_device(name):
+def delete_device(device_id):
     with connect() as c:
-        c.execute("DELETE FROM pair_records WHERE name=?", (name,))
+        c.execute("DELETE FROM devices WHERE id=?", (device_id,))
 
 
-def set_pair_record(name, raw):
+def set_pair_record(device_id, raw):
     with connect() as c:
-        c.execute("UPDATE pair_records SET key=? WHERE name=?", (raw, name))
+        c.execute("UPDATE devices SET key=? WHERE id=?", (raw, device_id))
 
 
-def get_pair_record(name):
+def get_pair_record(device_id):
     with connect() as c:
         row = c.execute(
-            "SELECT key FROM pair_records WHERE name=?", (name,)
+            "SELECT key FROM devices WHERE id=?", (device_id,)
         ).fetchone()
     return plistlib.loads(row["key"]) if row and row["key"] else None

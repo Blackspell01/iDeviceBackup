@@ -8,15 +8,15 @@ async function request(path, method = 'GET', body) {
   return res.status === 204 ? null : res.json();
 }
 
-const device = (name, suffix = '') => `api/devices/${encodeURIComponent(name)}${suffix}`;
+const device = (id, suffix = '') => `api/devices/${id}${suffix}`;
 
 export const listDevices = () => request('api/devices');
 export const createDevice = (name) => request('api/devices', 'POST', { name });
-export const updateDevice = (name, patch) => request(device(name), 'PATCH', patch);
-export const deleteDevice = (name) => request(device(name), 'DELETE');
-export const setPairRecord = (name, content) => request(device(name, '/pair-record'), 'PUT', { content });
-export const archiveInfo = (name) => request(device(name, '/archive'));
-export const validatePairRecord = (name) => request(device(name, '/pair-record/validate'));
+export const updateDevice = (id, patch) => request(device(id), 'PATCH', patch);
+export const deleteDevice = (id) => request(device(id), 'DELETE');
+export const setPairRecord = (id, content) => request(device(id, '/pair-record'), 'PUT', { content });
+export const archiveInfo = (id) => request(device(id, '/archive'));
+export const validatePairRecord = (id) => request(device(id, '/pair-record/validate'));
 export const clientIp = () => request('api/client-ip');
-export const startBackup = (name) => request('api/start', 'POST', { name });
+export const startBackup = (id) => request('api/start', 'POST', { id });
 export const stopBackup = () => request('api/stop', 'POST');
