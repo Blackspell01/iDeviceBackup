@@ -90,9 +90,10 @@ document.getElementById('btn-install-shortcut').addEventListener('click', () => 
   window.location.href = new URL('PairingRecord.shortcut', document.baseURI).href;
 });
 
-new BroadcastChannel('pairing').addEventListener('message', async (event) => {
+new BroadcastChannel('pairing').addEventListener('message', async ({ data }) => {
+  if (data.error) return ui.setMessage(`❌ ${data.error}`);
   await reload();
-  await select(Number(event.data));
+  await select(data.device);
   ui.setMessage('✅ Pairing Record erzeugt.');
 });
 

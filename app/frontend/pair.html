@@ -14,6 +14,7 @@
 
         const params = new URLSearchParams(location.hash.slice(1));
         const device = Number(params.get('pair'));
+        const channel = new BroadcastChannel('pairing');
 
         try {
             let base64 = params.get('data').replace(/-/g, '+').replace(/_/g, '/');
@@ -21,10 +22,9 @@
             const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
             await api.updateDevice(device, { uuid: params.get('uuid') });
             await api.setPairRecord(device, new TextDecoder().decode(bytes));
-            new BroadcastChannel('pairing').postMessage(device);
-            window.close();
+            channel.postMessage({ device });
         } catch (error) {
-            document.getElementById('pair-message').textContent = `❌ ${error.message}`;
+            channel.postMessage({ error: error.message });
         }
     </script>
 </body>
