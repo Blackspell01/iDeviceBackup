@@ -3,6 +3,7 @@ import logging
 import plistlib
 import time
 from collections import deque
+from datetime import timezone
 from pathlib import Path
 from pymobiledevice3.pair_records import PAIRING_RECORD_EXT, create_pairing_records_cache_folder, get_remote_pairing_record_filename
 from pymobiledevice3.remote.common import TunnelProtocol
@@ -28,14 +29,18 @@ class UiLog(logging.Handler):
 
 
 def archive_info(name, uuid):
-    path = BACKUP_DIR / name / uuid / "Info.plist"
+    archive = BACKUP_DIR / name / uuid
+    path = archive / "Info.plist"
+    status = archive / "Status.plist"
     if not path.exists():
         return None
     info = plistlib.loads(path.read_bytes())
+    date = plistlib.loads(status.read_bytes())["Date"]
     return {
-        "last_backup": info.get("Last Backup Date"),
+        "last_backup": date.replace(tzinfo=timezone.utc),
         "product_type": info.get("Product Type"),
         "product_version": info.get("Product Version"),
+        "size": sum(f.stat().st_size for f in archive.rglob("*") if f.is_file()),
     }
 
 
@@ -150,7 +155,7 @@ class Backup:
             self.progress = 100.0
             logging.info("Backup abgeschlossen")
         except Exception as e:
-            logging.exception("Backup fehlgeschlagen: %s", e or type(e).__name__)
+            logging.exception("Backup fehlgeschlagen: %s", str(e) or type(e).__name__)
             self.failed = True
         finally:
             if sampler:

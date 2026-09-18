@@ -79,7 +79,7 @@ async def pair_record(device_id: int, body: PairRecord):
 
 
 @app.get("/api/devices/{device_id}/archive")
-async def archive(device_id: int):
+def archive(device_id: int):
     dev = db.get_device(device_id)
     return archive_info(dev["name"], dev["uuid"]) if dev and dev["uuid"] else None
 

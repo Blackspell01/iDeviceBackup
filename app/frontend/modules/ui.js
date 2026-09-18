@@ -9,6 +9,7 @@ const deviceInfoDisplay = $('device-info-display');
 const deviceSelector = $('device-selector');
 const deviceInfo = $('device-info');
 const lastBackupDate = $('last-backup-date');
+const archiveSize = $('archive-size');
 const productType = $('product-type');
 const productVersion = $('product-version');
 const pairMessage = $('pair-message');
@@ -67,9 +68,8 @@ export function renderStatus(status, selected) {
   renderTransfer(status);
 
   const info = status.device_info;
-  const rates = status.running
-    ? ` · ↓ ${status.rate[0].toFixed(1)} MB/s · ↑ ${status.rate[1].toFixed(1)} MB/s`
-    : '';
+  const [rx = 0, tx = 0] = status.rate ?? [];
+  const rates = status.running ? ` · ↓ ${rx.toFixed(1)} MB/s · ↑ ${tx.toFixed(1)} MB/s` : '';
   deviceInfoDisplay.textContent = info ? `${info.model} • iOS ${info.version}${rates}` : '';
   deviceInfoDisplay.classList.toggle('hidden', !info);
 
@@ -104,6 +104,7 @@ export function renderArchive(info) {
   lastBackupDate.textContent = info?.last_backup
     ? new Date(info.last_backup).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })
     : '–';
+  archiveSize.textContent = info?.size ? `${(info.size / 1e9).toFixed(1)} GB` : '–';
   productType.textContent = info?.product_type ?? '–';
   productVersion.textContent = info?.product_version ?? '–';
 }
