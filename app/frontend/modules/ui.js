@@ -1,6 +1,6 @@
 const $ = (id) => document.getElementById(id);
 
-const logs = $('logs');
+const statusLine = $('status-line');
 const progressTitle = $('progress-title');
 const progressFill = $('progress-fill');
 const progressText = $('progress-text');
@@ -22,15 +22,22 @@ export const btnDelete = $('btn-delete-device');
 export const btnValidate = $('btn-validate');
 export const btnCreate = $('btn-create');
 
-export function renderLog(lines) {
-  logs.textContent = lines.join('\n');
-  logs.scrollTop = logs.scrollHeight;
+function renderMessage(message) {
+  const text = message ?? '';
+  if (statusLine.textContent === text) return;
+  statusLine.textContent = text;
+  // Animation neu starten, damit jede Meldung kurz aufblendet.
+  statusLine.classList.remove('flash');
+  void statusLine.offsetWidth;
+  if (text) statusLine.classList.add('flash');
 }
 
 export function renderStatus(status, selected) {
   progressTitle.textContent = status.running
     ? `🟢 Backup läuft: ${status.device}`
-    : status.error ? `🔴 Fehler: ${status.error}` : '⚪ Bereit';
+    : status.failed ? '🔴 Fehler' : '⚪ Bereit';
+
+  renderMessage(status.message);
 
   const info = status.device_info;
   deviceInfoDisplay.textContent = info ? `${info.model} • iOS ${info.version}` : '';

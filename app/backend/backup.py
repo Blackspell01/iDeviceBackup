@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import plistlib
-from collections import deque
 from pathlib import Path
 from pymobiledevice3.pair_records import PAIRING_RECORD_EXT, create_pairing_records_cache_folder, get_remote_pairing_record_filename
 from pymobiledevice3.remote.common import TunnelProtocol
@@ -14,7 +13,7 @@ BACKUP_DIR = Path("/iPhone")
 
 class UiLog(logging.Handler):
     def emit(self, record):
-        backup.log(self.format(record))
+        backup.log(record.getMessage().strip())
 
     @classmethod
     def setup(cls):
@@ -65,8 +64,8 @@ class Backup:
         self.device = None
         self.progress = 0.0
         self.info = None
-        self.error = None
-        self.messages = deque(maxlen=500)
+        self.failed = False
+        self.message = ""
         self.subscribers: set[asyncio.Queue] = set()
 
     @property
@@ -79,24 +78,23 @@ class Backup:
             "device": self.device,
             "progress": self.progress,
             "device_info": self.info,
-            "error": self.error,
+            "failed": self.failed,
+            "message": self.message,
         }
 
-    def payload(self, *log):
-        return {"status": self.status(), "log": list(log)}
-
-    def publish(self, *log):
+    def publish(self):
         for queue in self.subscribers:
-            queue.put_nowait(self.payload(*log))
+            queue.put_nowait(self.status())
 
     def log(self, message):
-        self.messages.append(message)
-        self.publish(message)
+        """Ersetzt die aktuell angezeigte Zeile im UI."""
+        self.message = message
+        self.publish()
 
     def start(self, device_id):
         dev = db.get_device(device_id)
-        self.device, self.progress, self.info, self.error = dev["name"], 0.0, None, None
-        self.messages.clear()
+        self.device, self.progress, self.info = dev["name"], 0.0, None
+        self.failed, self.message = False, ""
         self.task = asyncio.create_task(self._run(dev, db.get_pair_record(device_id)))
         self.task.add_done_callback(lambda _: self.publish())
         self.publish()
@@ -128,8 +126,8 @@ class Backup:
             self.progress = 100.0
             logging.info("Backup abgeschlossen")
         except Exception as e:
-            logging.exception("Backup fehlgeschlagen")
-            self.error = str(e) or type(e).__name__
+            logging.exception("Backup fehlgeschlagen: %s", e or type(e).__name__)
+            self.failed = True
 
 
 backup = Backup()

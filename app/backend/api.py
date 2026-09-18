@@ -120,9 +120,9 @@ async def events():
 
     async def stream():
         try:
-            yield f"event: init\ndata: {json.dumps(backup.payload(*backup.messages))}\n\n"
+            yield f"data: {json.dumps(backup.status())}\n\n"
             while True:
-                yield f"event: update\ndata: {json.dumps(await queue.get())}\n\n"
+                yield f"data: {json.dumps(await queue.get())}\n\n"
         finally:
             backup.subscribers.discard(queue)
 

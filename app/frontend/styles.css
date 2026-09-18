@@ -36,13 +36,6 @@ html { color-scheme: dark; }
     --danger: #f44336;
     --danger-hover: #d32f2f;
     --danger-glow: rgba(244, 67, 54, 0.3);         /* --danger bei 30 % */
-
-    /* Log-Konsole */
-    --console-bg: #1e1e1e;
-    --console-text: #d4d4d4;
-    --console-track: #2d2d2d;
-    --console-thumb: #555;
-    --console-thumb-hover: #777;
 }
 
 body {
@@ -152,11 +145,24 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent) 0%, var(--accent-alt) 100%); transition: width 0.5s ease; }
 .progress-text { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: var(--text); font-weight: 600; font-size: 14px; }
 
-.logs-container { background: var(--console-bg); color: var(--console-text); padding: 10px; border-radius: 10px; height: 350px; overflow-y: auto; font-family: 'Courier New', monospace; font-size: 10px; font-weight: bold; line-height: 1.6; white-space: pre-wrap; word-wrap: break-word; }
-.logs-container::-webkit-scrollbar { width: 10px; }
-.logs-container::-webkit-scrollbar-track { background: var(--console-track); border-radius: 10px; }
-.logs-container::-webkit-scrollbar-thumb { background: var(--console-thumb); border-radius: 10px; }
-.logs-container::-webkit-scrollbar-thumb:hover { background: var(--console-thumb-hover); }
+/* Statusmeldung: jede neue Meldung ersetzt die vorherige, langer Text bricht um */
+.status-line {
+    min-height: 1.4em;
+    line-height: 1.4;
+    color: var(--text-muted);
+    font-size: 0.9em;
+    overflow-wrap: anywhere;
+}
+.status-line.flash { animation: status-in 0.25s ease-out; }
+
+@keyframes status-in {
+    from { opacity: 0; transform: translateY(-3px); }
+    to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .status-line.flash { animation: none; }
+}
 
 .hidden { display: none; }
 

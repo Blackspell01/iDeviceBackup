@@ -23,6 +23,7 @@
             await api.updateDevice(device, { uuid: params.get('uuid') });
             await api.setPairRecord(device, new TextDecoder().decode(bytes));
             channel.postMessage({ device });
+            window.close();
         } catch (error) {
             channel.postMessage({ error: error.message });
         }
