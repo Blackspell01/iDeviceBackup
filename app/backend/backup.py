@@ -1,6 +1,8 @@
 import asyncio
 import logging
 import plistlib
+import time
+from collections import deque
 from pathlib import Path
 from pymobiledevice3.pair_records import PAIRING_RECORD_EXT, create_pairing_records_cache_folder, get_remote_pairing_record_filename
 from pymobiledevice3.remote.common import TunnelProtocol
@@ -10,6 +12,10 @@ from pymobiledevice3.services.mobilebackup2 import Mobilebackup2Service
 from backend import db
 
 BACKUP_DIR = Path("/iPhone")
+
+def counters(iface):
+    stats = Path(f"/sys/class/net/{iface}/statistics")
+    return int((stats / "rx_bytes").read_text()), int((stats / "tx_bytes").read_text())
 
 class UiLog(logging.Handler):
     def emit(self, record):
@@ -66,6 +72,8 @@ class Backup:
         self.info = None
         self.failed = False
         self.message = ""
+        self.rate = [0.0, 0.0]
+        self.history = deque(maxlen=60)
         self.subscribers: set[asyncio.Queue] = set()
 
     @property
@@ -80,6 +88,8 @@ class Backup:
             "device_info": self.info,
             "failed": self.failed,
             "message": self.message,
+            "rate": self.rate,
+            "history": list(self.history),
         }
 
     def publish(self):
@@ -95,6 +105,8 @@ class Backup:
         dev = db.get_device(device_id)
         self.device, self.progress, self.info = dev["name"], 0.0, None
         self.failed, self.message = False, ""
+        self.rate = [0.0, 0.0]
+        self.history.clear()
         self.task = asyncio.create_task(self._run(dev, db.get_pair_record(device_id)))
         self.task.add_done_callback(lambda _: self.publish())
         self.publish()
@@ -109,11 +121,23 @@ class Backup:
             self.progress = value
             self.publish()
 
+    async def _sample(self, iface):
+        last, clock = counters(iface), time.monotonic()
+        while True:
+            await asyncio.sleep(1)
+            now, tick = counters(iface), time.monotonic()
+            self.rate = [(n - l) / (tick - clock) / 1e6 for n, l in zip(now, last)]   # [rx, tx] in MB/s
+            last, clock = now, tick
+            self.history.append(self.rate)
+            self.publish()
+
     async def _run(self, dev, record):
+        sampler = None
         try:
             logging.info("Verbinde mit %s", dev["ip"])
             service = await connect(dev, record)
             async with start_tunnel_over_remotepairing(service, protocol=TunnelProtocol.TCP) as tunnel:
+                sampler = asyncio.create_task(self._sample(tunnel.interface))
                 async with RemoteServiceDiscoveryService((tunnel.address, tunnel.port)) as rsd:
                     self.info = {"model": rsd.product_type, "version": rsd.product_version}
                     self.publish()
@@ -128,6 +152,10 @@ class Backup:
         except Exception as e:
             logging.exception("Backup fehlgeschlagen: %s", e or type(e).__name__)
             self.failed = True
+        finally:
+            if sampler:
+                sampler.cancel()
+            self.rate = [0.0, 0.0]
 
 
 backup = Backup()

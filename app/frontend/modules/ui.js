@@ -1,6 +1,7 @@
 const $ = (id) => document.getElementById(id);
 
 const statusLine = $('status-line');
+const chart = $('chart');
 const progressTitle = $('progress-title');
 const progressFill = $('progress-fill');
 const progressText = $('progress-text');
@@ -22,6 +23,31 @@ export const btnDelete = $('btn-delete-device');
 export const btnValidate = $('btn-validate');
 export const btnCreate = $('btn-create');
 
+const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name);
+
+const CHART = {
+  chart: { type: 'area', height: 40, sparkline: { enabled: true }, animations: { enabled: false } },
+  stroke: { curve: 'smooth', width: 0 },
+  fill: { type: 'gradient', gradient: { opacityFrom: 0.45, opacityTo: 0 } },
+  colors: [css('--accent'), css('--accent-alt')],
+  tooltip: { enabled: false },
+};
+
+let apex;
+
+function renderTransfer({ running, history = [] }) {
+  chart.classList.toggle('hidden', !running || history.length < 2);
+  if (history.length < 2) return;
+
+  const series = [
+    { name: 'vom iPhone', data: history.map((rate) => rate[0]) },
+    { name: 'zum iPhone', data: history.map((rate) => rate[1]) },
+  ];
+  if (apex) return apex.updateSeries(series);
+  apex = new ApexCharts(chart, { ...CHART, series });
+  apex.render();
+}
+
 function renderMessage(message) {
   const text = message ?? '';
   if (statusLine.textContent === text) return;
@@ -38,9 +64,13 @@ export function renderStatus(status, selected) {
     : status.failed ? '🔴 Fehler' : '⚪ Bereit';
 
   renderMessage(status.message);
+  renderTransfer(status);
 
   const info = status.device_info;
-  deviceInfoDisplay.textContent = info ? `${info.model} • iOS ${info.version}` : '';
+  const rates = status.running
+    ? ` · ↓ ${status.rate[0].toFixed(1)} MB/s · ↑ ${status.rate[1].toFixed(1)} MB/s`
+    : '';
+  deviceInfoDisplay.textContent = info ? `${info.model} • iOS ${info.version}${rates}` : '';
   deviceInfoDisplay.classList.toggle('hidden', !info);
 
   deviceSelector.classList.toggle('hidden', status.running);
